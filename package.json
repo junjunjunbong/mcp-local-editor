@@ -1,0 +1,25 @@
+{
+  "name": "mcp-local-editor",
+  "version": "0.1.0",
+  "description": "A minimal, workspace-confined MCP server for searching, reading, editing, testing, and reviewing a local repository.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "mcp-local-editor": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/cli.js && node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "local-editor",
+    "coding-agent"
+  ],
+  "license": "UNLICENSED"
+}
