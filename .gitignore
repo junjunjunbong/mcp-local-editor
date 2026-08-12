@@ -5,3 +5,4 @@ coverage/
 commands.local.json
 workspaces.local.json
 .mcp-local-editor.local.json
+.mcp-local-editor-token
