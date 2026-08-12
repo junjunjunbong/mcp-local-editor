@@ -1,0 +1,16 @@
+{
+  "commands": {
+    "test": {
+      "description": "Run the repository test suite",
+      "argv": ["npm", "test"],
+      "timeoutSec": 300,
+      "maxOutputBytes": 262144
+    },
+    "typecheck": {
+      "description": "Run the repository type checker",
+      "argv": ["npm", "run", "typecheck"],
+      "timeoutSec": 180,
+      "maxOutputBytes": 262144
+    }
+  }
+}
