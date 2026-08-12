@@ -2,4 +2,6 @@ node_modules/
 .DS_Store
 coverage/
 *.log
+commands.local.json
+workspaces.local.json
 .mcp-local-editor.local.json
