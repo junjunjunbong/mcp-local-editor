@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "workspaces": {
+    "mcp-local-editor": {
+      "displayName": "MCP Local Editor",
+      "root": "/absolute/path/to/mcp-local-editor",
+      "commandsConfig": "/absolute/path/to/mcp-local-editor/commands.local.json"
+    }
+  }
+}
