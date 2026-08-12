@@ -1,8 +1,13 @@
 # mcp-local-editor
 
-A small stdio MCP server that lets an MCP client work inside **operator-registered local repositories**.
+A small local editing service that lets an MCP client or a ChatGPT Custom GPT work inside **operator-registered local repositories**.
 
-The server does not run Codex, OpenCodex, an external model provider, or an API. The MCP client supplies the reasoning loop. This process exposes seven constrained tools:
+The server does not run Codex, OpenCodex, an external model provider, or an API model. The client supplies the reasoning loop. The same constrained service is available through:
+
+- stdio MCP with `mcp-local-editor serve`
+- authenticated HTTP Actions with `mcp-local-editor-actions`
+
+The service exposes seven tools:
 
 - `workspace_list`
 - `workspace_open`
@@ -12,12 +17,12 @@ The server does not run Codex, OpenCodex, an external model provider, or an API.
 - `command_run`
 - `git_diff`
 
-## Version 0.2: switch repositories without restarting
+## Switch repositories without restarting
 
-Version 0.1 fixed one repository root at process startup. Version 0.2 stores a persistent allowlist of workspaces and issues a short-lived session for the selected workspace.
+The server stores a persistent allowlist of workspaces and issues a short-lived session for the selected workspace.
 
 ```text
-one long-running MCP server
+one long-running local editor
         │
         ├─ mcp-local-editor
         ├─ ai-research-harness
@@ -34,6 +39,7 @@ A model never provides an absolute local path. It can select only an id register
 - Node.js 20 or newer
 - Git for `git_diff`
 - ripgrep (`rg`) for `repo_search`
+- a public HTTPS tunnel only when connecting ChatGPT web Actions
 
 There are no npm runtime dependencies.
 
@@ -46,7 +52,7 @@ npm link
 
 mcp-local-editor workspace add \
   mcp-local-editor \
-  /Users/junwon/projects/mcp-local-editor \
+  /Users/junwon/Projects/mcp-local-editor \
   --display-name "MCP Local Editor" \
   --commands commands.local.json
 ```
@@ -56,7 +62,7 @@ A relative `--commands` path is resolved from the target workspace root. Registe
 ```bash
 mcp-local-editor workspace add \
   ai-research-harness \
-  /Users/junwon/projects/ai-research-harness \
+  /Users/junwon/Projects/ai-research-harness \
   --display-name "AI Research Harness" \
   --commands commands.local.json
 ```
@@ -96,7 +102,7 @@ The file is local machine state and is already excluded by `.gitignore`. Keep `w
 
 Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
 
-## Start the MCP server
+## Start the stdio MCP server
 
 ```bash
 mcp-local-editor serve
@@ -126,7 +132,29 @@ Example stdio client configuration:
 }
 ```
 
-This version is still stdio-only. It does not yet provide the HTTPS or Actions adapter needed for ChatGPT web.
+## Connect ChatGPT web with Actions
+
+Start the authenticated local HTTP adapter with a bearer token:
+
+```bash
+umask 077
+openssl rand -hex 32 > .mcp-local-editor-token
+
+mcp-local-editor-actions \
+  --token-file .mcp-local-editor-token \
+  --host 127.0.0.1 \
+  --port 8787
+```
+
+Then expose `http://127.0.0.1:8787` through an HTTPS tunnel and import the public `/openapi.json` URL in a Custom GPT Action. Full setup, tunnel guidance, authentication, and recommended GPT instructions are in [docs/chatgpt-actions.md](docs/chatgpt-actions.md).
+
+The HTTP adapter:
+
+- reuses the same workspace registry, session manager, edit guards, and command policy as stdio MCP
+- requires `Authorization: Bearer <token>` on every action endpoint
+- exposes only `/healthz` and `/openapi.json` without authentication
+- binds to loopback by default
+- accepts JSON request bodies up to 1 MiB
 
 ## Normal tool flow
 
@@ -175,8 +203,9 @@ It enforces:
 - only operator-configured argv arrays can run
 - Git operations are read-only
 - concurrent sessions remain bound to their own workspaces
+- HTTP action calls require a bearer token
 
-It does not provide Docker, VM, network isolation, arbitrary shell access, file create/delete/move, Git commit/push, HTTP MCP, OAuth, a tunnel, or an autonomous agent loop.
+It does not provide Docker, VM, network isolation, arbitrary shell access, file create/delete/move, Git commit/push, OAuth, automated tunnel management, HTTP MCP, or an autonomous agent loop.
 
 ## Development
 
@@ -184,4 +213,4 @@ It does not provide Docker, VM, network isolation, arbitrary shell access, file 
 npm run check
 ```
 
-The test suite covers registry persistence and locking, workspace replacement/removal, path confinement, stale edits, read/write access, session expiry and revocation, concurrent workspace isolation, per-workspace command isolation, MCP round trips, and the workspace CLI.
+The test suite covers registry persistence and locking, workspace replacement/removal, path confinement, stale edits, read/write access, session expiry and revocation, concurrent workspace isolation, per-workspace command isolation, MCP round trips, workspace CLI behavior, OpenAPI generation, bearer authentication, HTTP error mapping, body limits, and Actions route dispatch.
