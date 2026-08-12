@@ -21,7 +21,7 @@ Usage:
   mcp-local-editor workspace remove <id>
 
 Options:
-  --registry <path>          Registry path. Default: ~/.config/mcp-local-editor/workspaces.json
+  --registry <path>          Registry path. Default: package-local workspaces.local.json
   --session-ttl-sec <value>  Session lifetime, 60-3600 seconds.
   --help                     Show help.
   --version                  Show version.

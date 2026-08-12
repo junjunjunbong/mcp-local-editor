@@ -80,13 +80,21 @@ mcp-local-editor workspace add \
 
 Use `--replace --no-commands` to remove an inherited command configuration.
 
-The default registry is:
+The default registry is stored next to this package, in the Git-ignored local file:
 
 ```text
-~/.config/mcp-local-editor/workspaces.json
+workspaces.local.json
 ```
 
-Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, or `MCP_LOCAL_EDITOR_HOME`.
+For a checkout at `/Users/junwon/Projects/mcp-local-editor`, the file is:
+
+```text
+/Users/junwon/Projects/mcp-local-editor/workspaces.local.json
+```
+
+The file is local machine state and is already excluded by `.gitignore`. Keep `workspaces.example.json` in Git as the shareable format example.
+
+Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
 
 ## Start the MCP server
 

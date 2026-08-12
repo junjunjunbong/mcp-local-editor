@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig, Workspace } from "./core.js";
 import { ToolError } from "./errors.js";
 
@@ -10,15 +10,15 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const LOCK_RETRIES = 80;
 const LOCK_RETRY_MS = 25;
 const STALE_LOCK_MS = 30_000;
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function defaultRegistryPath({ env = process.env, home = os.homedir(), platform = process.platform } = {}) {
+export function defaultRegistryPath({ env = process.env, packageRoot = PACKAGE_ROOT } = {}) {
   if (env.MCP_LOCAL_EDITOR_REGISTRY) return path.resolve(env.MCP_LOCAL_EDITOR_REGISTRY);
   if (env.MCP_LOCAL_EDITOR_HOME) return path.join(path.resolve(env.MCP_LOCAL_EDITOR_HOME), "workspaces.json");
   if (env.XDG_CONFIG_HOME) return path.join(path.resolve(env.XDG_CONFIG_HOME), "mcp-local-editor", "workspaces.json");
-  if (platform === "win32" && env.APPDATA) return path.join(path.resolve(env.APPDATA), "mcp-local-editor", "workspaces.json");
-  return path.join(home, ".config", "mcp-local-editor", "workspaces.json");
+  return path.join(path.resolve(packageRoot), "workspaces.local.json");
 }
 
 export function validateWorkspaceId(id) {

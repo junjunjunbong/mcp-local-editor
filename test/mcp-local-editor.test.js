@@ -81,7 +81,11 @@ test("parseArgs gives a migration error for removed single-root mode", () => {
 });
 
 test("defaultRegistryPath honors XDG_CONFIG_HOME", () => {
-  assert.equal(defaultRegistryPath({ env: { XDG_CONFIG_HOME: "/tmp/x" }, home: "/home/a", platform: "linux" }), "/tmp/x/mcp-local-editor/workspaces.json");
+  assert.equal(defaultRegistryPath({ env: { XDG_CONFIG_HOME: "/tmp/x" } }), "/tmp/x/mcp-local-editor/workspaces.json");
+});
+
+test("defaultRegistryPath stores the registry next to the package", () => {
+  assert.equal(defaultRegistryPath({ env: {}, packageRoot: "/Users/example/mcp-local-editor" }), "/Users/example/mcp-local-editor/workspaces.local.json");
 });
 
 test("Workspace rejects lexical path escapes", async (t) => {
