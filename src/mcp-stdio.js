@@ -15,11 +15,12 @@ function isRequest(value) {
 }
 
 export class McpStdioServer {
-  constructor(service, { input = process.stdin, output = process.stdout, errorOutput = process.stderr } = {}) {
+  constructor(service, { input = process.stdin, output = process.stdout, errorOutput = process.stderr, toolDefinitions = undefined } = {}) {
     this.service = service;
     this.input = input;
     this.output = output;
     this.errorOutput = errorOutput;
+    this.toolDefinitions = toolDefinitions ?? service?.toolDefinitions ?? TOOL_DEFINITIONS;
     this.closed = false;
   }
 
@@ -29,7 +30,7 @@ export class McpStdioServer {
 
   discoverResult() {
     return {
-      supportedVersions: [MODERN_PROTOCOL_VERSION],
+      supportedVersions: [MODERN_PROTOCOL_VERSION, ...LEGACY_PROTOCOL_VERSIONS],
       capabilities: this.capabilities(),
       instructions: this.service.instructions(),
       _meta: { "io.modelcontextprotocol/serverInfo": SERVER_INFO }
@@ -38,8 +39,11 @@ export class McpStdioServer {
 
   initializeResult(params = {}) {
     const requested = params.protocolVersion;
+    const protocolVersion = requested === MODERN_PROTOCOL_VERSION || LEGACY_PROTOCOL_VERSIONS.has(requested)
+      ? requested
+      : "2025-11-25";
     return {
-      protocolVersion: LEGACY_PROTOCOL_VERSIONS.has(requested) ? requested : "2025-11-25",
+      protocolVersion,
       capabilities: this.capabilities(),
       serverInfo: SERVER_INFO,
       instructions: this.service.instructions()
@@ -55,7 +59,7 @@ export class McpStdioServer {
         case "initialize": return result(id, this.initializeResult(params));
         case "ping":
         case "logging/setLevel": return result(id, {});
-        case "tools/list": return result(id, { tools: TOOL_DEFINITIONS });
+        case "tools/list": return result(id, { tools: this.toolDefinitions });
         case "resources/list": return result(id, { resources: [] });
         case "resources/templates/list": return result(id, { resourceTemplates: [] });
         case "prompts/list": return result(id, { prompts: [] });

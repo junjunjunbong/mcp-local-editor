@@ -4,5 +4,9 @@ coverage/
 *.log
 commands.local.json
 workspaces.local.json
+*.oauth.json
+*.oauth.json.lock
+*.oauth.json.tmp-*
 .mcp-local-editor.local.json
 .mcp-local-editor-token
+.mcp-local-editor-owner-token

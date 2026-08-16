@@ -1,18 +1,20 @@
 {
   "name": "mcp-local-editor",
   "version": "0.2.0",
-  "description": "A multi-workspace local editor exposed through stdio MCP and authenticated ChatGPT Actions.",
+  "description": "A multi-workspace local editor exposed through stdio MCP, remote OAuth MCP, and authenticated ChatGPT Actions.",
   "type": "module",
   "private": true,
   "bin": {
     "mcp-local-editor": "./src/cli.js",
+    "mcp-local-editor-mcp": "./src/mcp-http-cli.js",
     "mcp-local-editor-actions": "./src/actions-cli.js"
   },
   "scripts": {
     "start": "node src/cli.js serve",
+    "start:mcp": "node src/mcp-http-cli.js",
     "start:actions": "node src/actions-cli.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/actions-cli.js && node --check src/actions-contract.js && node --check src/cli.js && node --check src/core.js && node --check src/errors.js && node --check src/http-actions.js && node --check src/mcp-stdio.js && node --check src/process.js && node --check src/registry.js && node --check src/service.js && node --check src/sessions.js && node --test test/*.test.js"
+    "check": "node --check src/actions-cli.js && node --check src/actions-contract.js && node --check src/cli.js && node --check src/core.js && node --check src/errors.js && node --check src/http-actions.js && node --check src/http-utils.js && node --check src/mcp-http-cli.js && node --check src/mcp-http.js && node --check src/mcp-stdio.js && node --check src/oauth-store.js && node --check src/oauth.js && node --check src/process.js && node --check src/registry.js && node --check src/service.js && node --check src/sessions.js && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=20"
@@ -23,7 +25,10 @@
     "local-editor",
     "coding-agent",
     "workspace",
+    "chatgpt-app",
     "chatgpt-actions",
+    "streamable-http",
+    "oauth",
     "openapi"
   ],
   "license": "UNLICENSED"

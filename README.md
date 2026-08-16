@@ -1,13 +1,18 @@
 # mcp-local-editor
 
-A small local editing service that lets an MCP client or a ChatGPT Custom GPT work inside **operator-registered local repositories**.
+A local repository service that lets an MCP client or ChatGPT work inside **operator-registered workspaces**.
 
-The server does not run Codex, OpenCodex, an external model provider, or an API model. The client supplies the reasoning loop. The same constrained service is available through:
+The server does not run Codex, OpenCodex, an external model provider, or an API model. The client supplies the reasoning loop. The same guarded service is available through three transports:
 
 - stdio MCP with `mcp-local-editor serve`
+- remote Streamable HTTP MCP with `mcp-local-editor-mcp`
 - authenticated HTTP Actions with `mcp-local-editor-actions`
 
-The service exposes seven tools:
+The remote MCP transport can be registered as a custom app and used from normal ChatGPT conversations. It is not tied to a Custom GPT.
+
+## Tools and profiles
+
+The full profile exposes seven tools:
 
 - `workspace_list`
 - `workspace_open`
@@ -17,35 +22,26 @@ The service exposes seven tools:
 - `command_run`
 - `git_diff`
 
-## Switch repositories without restarting
+The read profile exposes only `workspace_list`, read-only `workspace_open`, `repo_search`, `file_read`, and `git_diff`.
 
-The server stores a persistent allowlist of workspaces and issues a short-lived session for the selected workspace.
+Read-only mode is enforced at three levels:
 
-```text
-one long-running local editor
-        │
-        ├─ mcp-local-editor
-        ├─ ai-research-harness
-        └─ stay-probe
-
-conversation A → session A → mcp-local-editor
-conversation B → session B → ai-research-harness
-```
-
-A model never provides an absolute local path. It can select only an id registered by the operator.
+- write tools are omitted from MCP discovery;
+- `workspace_open` does not expose an `access` field;
+- the service forces a read session and does not return command identifiers.
 
 ## Requirements
 
 - Node.js 20 or newer
 - Git for `git_diff`
 - ripgrep (`rg`) for `repo_search`
-- a public HTTPS tunnel only when connecting ChatGPT web Actions
+- an HTTPS route when ChatGPT connects directly to the remote MCP server
 
 There are no npm runtime dependencies.
 
 ## Register workspaces
 
-A folder is registered once. It can remain anywhere on the computer and does not need to live inside this repository.
+A folder is registered once and can remain anywhere on the computer.
 
 ```bash
 npm link
@@ -67,54 +63,37 @@ mcp-local-editor workspace add \
   --commands commands.local.json
 ```
 
-List or remove registrations:
+List, replace, or remove registrations:
 
 ```bash
 mcp-local-editor workspace list
 mcp-local-editor workspace list --json
-mcp-local-editor workspace remove ai-research-harness
-```
 
-Update a moved folder while preserving omitted metadata:
-
-```bash
 mcp-local-editor workspace add \
   ai-research-harness \
   /new/path/ai-research-harness \
   --replace
+
+mcp-local-editor workspace remove ai-research-harness
 ```
 
 Use `--replace --no-commands` to remove an inherited command configuration.
 
-The default registry is stored next to this package, in the Git-ignored local file:
+The default registry is stored next to this package in the Git-ignored file `workspaces.local.json`. Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
 
-```text
-workspaces.local.json
-```
+## Local stdio MCP
 
-For a checkout at `/Users/junwon/Projects/mcp-local-editor`, the file is:
-
-```text
-/Users/junwon/Projects/mcp-local-editor/workspaces.local.json
-```
-
-The file is local machine state and is already excluded by `.gitignore`. Keep `workspaces.example.json` in Git as the shareable format example.
-
-Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
-
-## Start the stdio MCP server
+Run the existing full local editor:
 
 ```bash
 mcp-local-editor serve
 ```
 
-The default session lifetime is 30 minutes. It can be configured between 60 and 3600 seconds:
+Run a read-only MCP catalog:
 
 ```bash
-mcp-local-editor serve --session-ttl-sec 1800
+mcp-local-editor serve --profile read
 ```
-
-Sessions are in memory and disappear when the process stops. Workspace registrations remain on disk. `workspace_list` and `workspace_open` reload the registry, so a folder added from another terminal becomes available without restarting the server.
 
 Example stdio client configuration:
 
@@ -125,16 +104,120 @@ Example stdio client configuration:
       "command": "node",
       "args": [
         "/absolute/path/to/mcp-local-editor/src/cli.js",
-        "serve"
+        "serve",
+        "--profile",
+        "full"
       ]
     }
   }
 }
 ```
 
-## Connect ChatGPT web with Actions
+The default workspace-session lifetime is 30 minutes. It can be configured between 60 and 3600 seconds:
 
-Start the authenticated local HTTP adapter with a bearer token:
+```bash
+mcp-local-editor serve --session-ttl-sec 1800
+```
+
+Sessions are kept in memory and disappear when the process stops. Workspace registrations remain on disk. `workspace_list` and `workspace_open` reload the registry, so newly registered workspaces become available without restarting the server.
+
+## ChatGPT custom app
+
+There are two deployment paths.
+
+### Option A: Secure MCP Tunnel
+
+Keep the service on stdio and configure OpenAI's Secure MCP Tunnel to launch:
+
+```bash
+node /absolute/path/to/mcp-local-editor/src/cli.js serve --profile read
+```
+
+Then register the tunnel connection as a custom app in ChatGPT developer mode. The current tunnel-client setup is documented at:
+
+- https://github.com/openai/tunnel-client
+
+Use `--profile full` only when the ChatGPT workspace permits modify tools.
+
+### Option B: direct HTTPS MCP with OAuth
+
+The repository includes a dependency-free stateless Streamable HTTP endpoint at `/mcp` with:
+
+- OAuth authorization-code flow with PKCE S256
+- dynamic client registration
+- protected-resource and authorization-server metadata
+- rotating refresh tokens and token revocation
+- persistent client state and hashed bearer tokens
+- owner-token approval with rate limiting
+- bounded state and request bodies
+- Host and Origin validation
+- read-only remote profile by default
+
+Create an owner token:
+
+```bash
+umask 077
+openssl rand -hex 32 > .mcp-local-editor-token
+chmod 600 .mcp-local-editor-token
+```
+
+Expose local port `8790` through a fixed HTTPS tunnel or reverse proxy. For a temporary Cloudflare route, start the tunnel first:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8790
+```
+
+Copy the generated HTTPS origin, then start the MCP server. Do not append `/mcp` to `--public-url`.
+
+```bash
+mcp-local-editor-mcp \
+  --host 127.0.0.1 \
+  --port 8790 \
+  --public-url https://example.trycloudflare.com \
+  --owner-token-file /Users/junwon/Projects/mcp-local-editor/.mcp-local-editor-token \
+  --profile read
+```
+
+Create the ChatGPT custom app with:
+
+```text
+MCP URL: https://example.trycloudflare.com/mcp
+Authentication: OAuth
+```
+
+During authorization, enter the local owner token. The token is checked locally and is never returned to ChatGPT.
+
+A stable HTTPS hostname is recommended. Access and refresh tokens are bound to the configured MCP resource URL. If a temporary hostname changes, restart with the new `--public-url` and authorize again.
+
+The default OAuth state file is `<registry-path>.oauth.json`. It stores client metadata and only SHA-256 hashes of access and refresh tokens.
+
+Full setup and troubleshooting are in [docs/chatgpt-mcp.md](docs/chatgpt-mcp.md).
+
+### Full remote profile
+
+The remote server defaults to `--profile read`. Expose modify tools only through an explicit choice:
+
+```bash
+mcp-local-editor-mcp \
+  --public-url https://editor.example.com \
+  --owner-token-file .mcp-local-editor-token \
+  --profile full
+```
+
+Unauthenticated mode requires a second explicit acknowledgement:
+
+```bash
+mcp-local-editor-mcp \
+  --auth none \
+  --allow-unauthenticated \
+  --public-url http://127.0.0.1:8790
+```
+
+Do not expose no-auth mode directly to the public internet.
+
+## ChatGPT Actions fallback
+
+Actions remain available for existing Custom GPT integrations:
 
 ```bash
 umask 077
@@ -146,15 +229,9 @@ mcp-local-editor-actions \
   --port 8787
 ```
 
-Then expose `http://127.0.0.1:8787` through an HTTPS tunnel and import the public `/openapi.json` URL in a Custom GPT Action. Full setup, tunnel guidance, authentication, and recommended GPT instructions are in [docs/chatgpt-actions.md](docs/chatgpt-actions.md).
+Expose port `8787` through HTTPS and import the public `/openapi.json` URL in a Custom GPT Action. See [docs/chatgpt-actions.md](docs/chatgpt-actions.md).
 
-The HTTP adapter:
-
-- reuses the same workspace registry, session manager, edit guards, and command policy as stdio MCP
-- requires `Authorization: Bearer <token>` on every action endpoint
-- exposes only `/healthz` and `/openapi.json` without authentication
-- binds to loopback by default
-- accepts JSON request bodies up to 1 MiB
+Use the MCP path when the tool should appear as a custom app in normal ChatGPT conversations. Keep Actions as a compatibility fallback.
 
 ## Normal tool flow
 
@@ -167,7 +244,9 @@ command_run({session_id: "ses_...", command_id: "test"})
 git_diff({session_id: "ses_..."})
 ```
 
-A read session may search, read, and inspect Git diffs. `file_edit` and `command_run` require a write session. If a workspace registration is removed or replaced, existing sessions for it are revoked on their next tool call.
+In the read profile, `workspace_open` does not accept `access`; the service always creates a read session.
+
+A read session may search, read, and inspect Git diffs. `file_edit` and `command_run` require a write session in the full profile. If a workspace registration is removed or replaced, existing sessions for it are revoked on their next tool call.
 
 ## Command allowlist
 
@@ -200,12 +279,19 @@ It enforces:
 - edits require a current SHA-256 and an unambiguous exact-text match
 - file writes use a temporary file and atomic rename
 - read sessions cannot edit or execute commands
+- the read profile omits write tools and enforces read access server-side
 - only operator-configured argv arrays can run
 - Git operations are read-only
-- concurrent sessions remain bound to their own workspaces
-- HTTP action calls require a bearer token
+- concurrent workspace sessions remain isolated
+- direct remote MCP requires OAuth by default
+- OAuth tokens are persisted only as hashes
+- OAuth state uses atomic writes and a local file lock
+- OAuth owner-token and client-registration attempts are rate limited
+- Actions require a separate bearer token
 
-It does not provide Docker, VM, network isolation, arbitrary shell access, file create/delete/move, Git commit/push, OAuth, automated tunnel management, HTTP MCP, or an autonomous agent loop.
+It does not provide Docker, VM, network isolation, arbitrary shell access, file create/delete/move, Git commit/push, automated tunnel management, or an autonomous agent loop.
+
+Keep the owner token private. Do not commit the registry, OAuth state, command policy, or token files.
 
 ## Development
 
@@ -213,4 +299,4 @@ It does not provide Docker, VM, network isolation, arbitrary shell access, file 
 npm run check
 ```
 
-The test suite covers registry persistence and locking, workspace replacement/removal, path confinement, stale edits, read/write access, session expiry and revocation, concurrent workspace isolation, per-workspace command isolation, MCP round trips, workspace CLI behavior, OpenAPI generation, bearer authentication, HTTP error mapping, body limits, and Actions route dispatch.
+CI runs the full check suite on Node.js 20 and 22. Tests cover registry persistence and locking, workspace replacement/removal, path confinement, stale edits, read/write access, session expiry and revocation, concurrent workspace isolation, stdio MCP, remote MCP, OAuth PKCE, refresh rotation, revocation, persisted bearer validation, OpenAPI generation, bearer authentication, body limits, and Actions dispatch.

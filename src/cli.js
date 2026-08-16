@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { asToolError } from "./errors.js";
 import { McpStdioServer } from "./mcp-stdio.js";
 import { defaultRegistryPath, WorkspaceRegistry } from "./registry.js";
-import { LocalEditorService } from "./service.js";
+import { LocalEditorService, normalizeToolProfile } from "./service.js";
 import { SessionManager } from "./sessions.js";
 
 const VERSION = "0.2.0";
@@ -15,7 +15,7 @@ function usage() {
   return `mcp-local-editor ${VERSION}
 
 Usage:
-  mcp-local-editor serve [--registry workspaces.json] [--session-ttl-sec 1800]
+  mcp-local-editor serve [--registry workspaces.json] [--session-ttl-sec 1800] [--profile full|read]
   mcp-local-editor workspace add <id> <root> [--display-name <name>] [--commands <file> | --no-commands] [--replace]
   mcp-local-editor workspace list [--json]
   mcp-local-editor workspace remove <id>
@@ -23,6 +23,7 @@ Usage:
 Options:
   --registry <path>          Registry path. Default: package-local workspaces.local.json
   --session-ttl-sec <value>  Session lifetime, 60-3600 seconds.
+  --profile <full|read>      MCP tool profile. Default: full
   --help                     Show help.
   --version                  Show version.
 `;
@@ -40,10 +41,15 @@ function parseTtl(value) {
   return parsed;
 }
 
+function parseProfile(value) {
+  try { return normalizeToolProfile(value); } catch { throw new Error("profile must be full or read"); }
+}
+
 function defaults(env) {
   return {
     registry: env.MCP_LOCAL_EDITOR_REGISTRY || defaultRegistryPath({ env }),
-    sessionTtlSec: env.MCP_LOCAL_EDITOR_SESSION_TTL_SEC ? parseTtl(env.MCP_LOCAL_EDITOR_SESSION_TTL_SEC) : DEFAULT_TTL
+    sessionTtlSec: env.MCP_LOCAL_EDITOR_SESSION_TTL_SEC ? parseTtl(env.MCP_LOCAL_EDITOR_SESSION_TTL_SEC) : DEFAULT_TTL,
+    profile: parseProfile(env.MCP_LOCAL_EDITOR_PROFILE || "full")
   };
 }
 
@@ -54,6 +60,7 @@ function parseServe(argv, env) {
     if (["--help", "-h"].includes(arg)) return { ...parsed, help: true };
     if (arg === "--registry") { parsed.registry = valueAfter(argv, i, arg); i += 1; continue; }
     if (arg === "--session-ttl-sec") { parsed.sessionTtlSec = parseTtl(valueAfter(argv, i, arg)); i += 1; continue; }
+    if (arg === "--profile") { parsed.profile = parseProfile(valueAfter(argv, i, arg)); i += 1; continue; }
     if (arg === "--root") throw new Error("--root was removed in v0.2; use `workspace add` and `serve`");
     throw new Error(`Unknown serve argument: ${arg}`);
   }
@@ -116,9 +123,11 @@ const publicEntry = (entry) => ({ workspace_id: entry.id, display_name: entry.di
 async function runServe(args) {
   const registry = new WorkspaceRegistry(args.registry);
   const sessions = new SessionManager(registry, { defaultTtlSec: args.sessionTtlSec, maxTtlSec: args.sessionTtlSec });
-  const server = new McpStdioServer(new LocalEditorService(registry, sessions));
+  const service = new LocalEditorService(registry, sessions, { profile: args.profile });
+  const server = new McpStdioServer(service);
   process.stderr.write(`[mcp-local-editor] registry=${registry.filePath}\n`);
   process.stderr.write(`[mcp-local-editor] registered_workspaces=${(await registry.list()).length}\n`);
+  process.stderr.write(`[mcp-local-editor] profile=${args.profile}\n`);
   await server.start();
 }
 
