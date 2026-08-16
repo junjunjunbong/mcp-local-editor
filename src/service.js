@@ -2,6 +2,7 @@ import { commandRun, fileEdit, fileRead, gitDiff, repoSearch } from "./core.js";
 import { ToolError } from "./errors.js";
 
 const SESSION_ID = { type: "string", minLength: 1, description: "Session returned by workspace_open" };
+const TOOL_PROFILES = new Set(["full", "read"]);
 
 export const TOOL_DEFINITIONS = [
   {
@@ -114,35 +115,108 @@ export const TOOL_DEFINITIONS = [
   }
 ];
 
+const READ_TOOL_NAMES = new Set(["workspace_list", "workspace_open", "repo_search", "file_read", "git_diff"]);
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+function readOnlyWorkspaceOpenDefinition() {
+  const base = clone(TOOL_DEFINITIONS.find((definition) => definition.name === "workspace_open"));
+  return {
+    ...base,
+    title: "Open read-only workspace session",
+    description: "Open a short-lived read-only session for one registered workspace id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workspace_id: { type: "string", minLength: 1 },
+        ttl_sec: { type: "integer", minimum: 60, maximum: 3600 }
+      },
+      required: ["workspace_id"],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  };
+}
+
+export function normalizeToolProfile(value = "full") {
+  if (typeof value !== "string" || !TOOL_PROFILES.has(value)) {
+    throw new ToolError("INVALID_TOOL_PROFILE", "tool profile must be full or read");
+  }
+  return value;
+}
+
+export function toolDefinitionsForProfile(profile = "full") {
+  const normalized = normalizeToolProfile(profile);
+  if (normalized === "full") return TOOL_DEFINITIONS.map(clone);
+  return TOOL_DEFINITIONS
+    .filter((definition) => READ_TOOL_NAMES.has(definition.name))
+    .map((definition) => {
+      if (definition.name === "workspace_open") return readOnlyWorkspaceOpenDefinition();
+      const safe = clone(definition);
+      if (safe.name === "file_read") safe.description = "Read a bounded slice of an existing UTF-8 file and return its SHA-256.";
+      return safe;
+    });
+}
+
 function withoutSession(input) {
   const { session_id: _sessionId, ...rest } = input;
   return rest;
 }
 
 export class LocalEditorService {
-  constructor(registry, sessions) {
+  constructor(registry, sessions, options = {}) {
     this.registry = registry;
     this.sessions = sessions;
+    const requestedProfile = typeof options === "string" ? options : options.profile;
+    this.profile = normalizeToolProfile(requestedProfile ?? "full");
+    this.toolDefinitions = toolDefinitionsForProfile(this.profile);
+    this.allowedToolNames = new Set(this.toolDefinitions.map((definition) => definition.name));
   }
 
   instructions() {
-    return [
+    const common = [
       "Call workspace_list and workspace_open before repository tools.",
       "Select only a registered workspace id; never invent or request an absolute path.",
       "Pass session_id to every repository tool.",
-      "Use file_read before file_edit and pass the returned SHA-256.",
-      "Read sessions cannot edit files or run commands.",
       "This is a workspace guard, not an operating-system sandbox."
+    ];
+    if (this.profile === "read") {
+      return [
+        ...common,
+        "All sessions are read-only.",
+        "This profile cannot edit files or run commands."
+      ].join(" ");
+    }
+    return [
+      ...common,
+      "Use file_read before file_edit and pass the returned SHA-256.",
+      "Read sessions cannot edit files or run commands."
     ].join(" ");
   }
 
   async call(name, args = {}) {
-    if (args === null || typeof args !== "object" || Array.isArray(args)) throw new ToolError("INVALID_ARGUMENT", "tool arguments must be an object");
+    if (args === null || typeof args !== "object" || Array.isArray(args)) {
+      throw new ToolError("INVALID_ARGUMENT", "tool arguments must be an object");
+    }
+    if (!this.allowedToolNames.has(name)) {
+      throw new ToolError("UNKNOWN_TOOL", `tool is not available in the ${this.profile} profile: ${name}`);
+    }
     switch (name) {
       case "workspace_list":
         return { workspaces: await this.registry.listStatus() };
-      case "workspace_open":
+      case "workspace_open": {
+        if (this.profile === "read") {
+          if (args.access !== undefined && args.access !== "read") {
+            throw new ToolError("PERMISSION_DENIED", "the read profile cannot open a write session");
+          }
+          const opened = await this.sessions.open({ ...args, access: "read" });
+          const { commands: _commands, ...safe } = opened;
+          return safe;
+        }
         return await this.sessions.open(args);
+      }
       case "repo_search": {
         const session = await this.sessions.resolve(args.session_id);
         return await repoSearch(session.workspace, withoutSession(args));
