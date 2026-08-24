@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,24 @@ export function validateWorkspaceId(id) {
     throw new ToolError("INVALID_WORKSPACE_ID", "workspace id must be 1-64 safe characters");
   }
   return id;
+}
+
+export function suggestWorkspaceId(source, usedIds = []) {
+  const used = new Set(usedIds);
+  const stem = path.basename(String(source ?? "")).normalize("NFC");
+  let base = stem.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
+  if (!base || !/^[A-Za-z0-9]/.test(base)) {
+    const digest = createHash("sha256").update(stem || String(source ?? "workspace")).digest("hex").slice(0, 8);
+    base = `ws-${digest}`;
+  }
+  base = base.slice(0, 64);
+  if (!used.has(base) && ID_PATTERN.test(base)) return base;
+  const prefix = base.slice(0, 60);
+  for (let index = 2; index < 100; index += 1) {
+    const candidate = `${prefix}-${index}`;
+    if (!used.has(candidate) && ID_PATTERN.test(candidate)) return candidate;
+  }
+  throw new ToolError("INVALID_WORKSPACE_ID", "could not allocate a workspace id");
 }
 
 function validateEntry(id, value) {
@@ -201,6 +219,20 @@ export class WorkspaceRegistry {
         commandsConfig: finalConfig
       };
       return validateEntry(id, document.workspaces[id]);
+    });
+  }
+
+  async addFolder({ root, displayName, commandsConfig = null }) {
+    const workspace = await Workspace.open(root);
+    const document = await this.readDocument();
+    const id = suggestWorkspaceId(workspace.root, Object.keys(document.workspaces));
+    const fallbackName = path.basename(workspace.root).normalize("NFC");
+    return await this.add({
+      id,
+      root: workspace.root,
+      displayName: displayName ?? fallbackName,
+      commandsConfig,
+      replace: false
     });
   }
 

@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DashboardServer, DASHBOARD_DEFAULTS } from "./dashboard.js";
 import { asToolError } from "./errors.js";
 import { McpStdioServer } from "./mcp-stdio.js";
 import { defaultRegistryPath, WorkspaceRegistry } from "./registry.js";
@@ -17,13 +18,17 @@ function usage() {
 Usage:
   mcp-local-editor serve [--registry workspaces.json] [--session-ttl-sec 1800] [--profile full|read]
   mcp-local-editor workspace add <id> <root> [--display-name <name>] [--commands <file> | --no-commands] [--replace]
+  mcp-local-editor workspace add-folder <root> [--display-name <name>] [--commands <file> | --no-commands]
   mcp-local-editor workspace list [--json]
   mcp-local-editor workspace remove <id>
+  mcp-local-editor dashboard [--host 127.0.0.1] [--port 8791]
 
 Options:
   --registry <path>          Registry path. Default: package-local workspaces.local.json
   --session-ttl-sec <value>  Session lifetime, 60-3600 seconds.
   --profile <full|read>      MCP tool profile. Default: full
+  --host <host>              Dashboard bind host. Default: 127.0.0.1
+  --port <port>              Dashboard bind port. Default: 8791
   --help                     Show help.
   --version                  Show version.
 `;
@@ -86,6 +91,19 @@ function parseWorkspace(argv, env) {
     }
     return parsed;
   }
+  if (action === "add-folder") {
+    if (!argv[1]) throw new Error("workspace add-folder requires <root>");
+    const parsed = { ...base, root: argv[1], displayName: undefined, commands: null };
+    for (let i = 2; i < argv.length; i += 1) {
+      const arg = argv[i];
+      if (arg === "--registry") { parsed.registry = valueAfter(argv, i, arg); i += 1; continue; }
+      if (arg === "--display-name") { parsed.displayName = valueAfter(argv, i, arg); i += 1; continue; }
+      if (arg === "--commands") { if (parsed.commands === null && parsed.noCommands) throw new Error("--commands conflicts with --no-commands"); parsed.commands = valueAfter(argv, i, arg); i += 1; continue; }
+      if (arg === "--no-commands") { if (typeof parsed.commands === "string") throw new Error("--no-commands conflicts with --commands"); parsed.commands = null; parsed.noCommands = true; continue; }
+      throw new Error(`Unknown workspace add-folder argument: ${arg}`);
+    }
+    return parsed;
+  }
   if (action === "list") {
     const parsed = { ...base, json: false };
     for (let i = 1; i < argv.length; i += 1) {
@@ -108,12 +126,39 @@ function parseWorkspace(argv, env) {
   throw new Error(`Unknown workspace action: ${action}`);
 }
 
+function parsePort(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) throw new Error("port must be 1-65535");
+  return parsed;
+}
+
+function parseDashboard(argv, env) {
+  const parsed = {
+    command: "dashboard",
+    registry: env.MCP_LOCAL_EDITOR_REGISTRY || defaultRegistryPath({ env }),
+    host: env.MCP_LOCAL_EDITOR_DASHBOARD_HOST || DASHBOARD_DEFAULTS.host,
+    port: env.MCP_LOCAL_EDITOR_DASHBOARD_PORT
+      ? parsePort(env.MCP_LOCAL_EDITOR_DASHBOARD_PORT)
+      : DASHBOARD_DEFAULTS.port
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (["--help", "-h"].includes(arg)) return { ...parsed, help: true };
+    if (arg === "--registry") { parsed.registry = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--host") { parsed.host = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--port") { parsed.port = parsePort(valueAfter(argv, i, arg)); i += 1; continue; }
+    throw new Error(`Unknown dashboard argument: ${arg}`);
+  }
+  return parsed;
+}
+
 export function parseArgs(argv, env = process.env) {
   if (!argv.length) return parseServe([], env);
   if (["--help", "-h"].includes(argv[0])) return { help: true };
   if (["--version", "-v"].includes(argv[0])) return { version: true };
   if (argv[0] === "serve") return parseServe(argv.slice(1), env);
   if (argv[0] === "workspace") return parseWorkspace(argv.slice(1), env);
+  if (argv[0] === "dashboard") return parseDashboard(argv.slice(1), env);
   if (argv[0].startsWith("--")) return parseServe(argv, env);
   throw new Error(`Unknown command: ${argv[0]}`);
 }
@@ -138,6 +183,11 @@ async function runWorkspace(args) {
     process.stdout.write(`${JSON.stringify({ ok: true, workspace: publicEntry(entry) }, null, 2)}\n`);
     return;
   }
+  if (args.action === "add-folder") {
+    const entry = await registry.addFolder({ root: args.root, displayName: args.displayName, commandsConfig: args.commands });
+    process.stdout.write(`${JSON.stringify({ ok: true, workspace: publicEntry(entry) }, null, 2)}\n`);
+    return;
+  }
   if (args.action === "remove") {
     const entry = await registry.remove(args.id);
     process.stdout.write(`${JSON.stringify({ ok: true, removed: publicEntry(entry) }, null, 2)}\n`);
@@ -159,7 +209,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (args.version) { process.stdout.write(`${VERSION}\n`); return; }
   if (args.command === "serve") return await runServe(args);
   if (args.command === "workspace") return await runWorkspace(args);
+  if (args.command === "dashboard") return await runDashboard(args);
   throw new Error("No command selected");
+}
+
+async function runDashboard(args) {
+  const registry = new WorkspaceRegistry(args.registry);
+  const server = new DashboardServer(registry, { host: args.host, port: args.port });
+  const url = await server.start();
+  process.stderr.write(`[mcp-local-editor] dashboard=${url}\n`);
+  process.stderr.write(`[mcp-local-editor] registry=${registry.filePath}\n`);
+  await new Promise(() => {});
 }
 
 const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

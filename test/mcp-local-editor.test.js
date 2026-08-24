@@ -10,7 +10,7 @@ import { parseArgs } from "../src/cli.js";
 import { commandRun, fileEdit, fileRead, gitDiff, loadConfig, normalizeConfig, repoSearch, Workspace } from "../src/core.js";
 import { ToolError } from "../src/errors.js";
 import { McpStdioServer } from "../src/mcp-stdio.js";
-import { defaultRegistryPath, WorkspaceRegistry } from "../src/registry.js";
+import { defaultRegistryPath, suggestWorkspaceId, WorkspaceRegistry } from "../src/registry.js";
 import { LocalEditorService, TOOL_DEFINITIONS } from "../src/service.js";
 import { SessionManager } from "../src/sessions.js";
 
@@ -72,8 +72,15 @@ test("parseArgs defaults to serve and supports registry configuration", () => {
 
 test("parseArgs supports workspace add, list, and remove", () => {
   assert.equal(parseArgs(["workspace", "add", "repo", "/tmp/repo", "--replace"], {}).replace, true);
+  assert.equal(parseArgs(["workspace", "add-folder", "/tmp/repo"], {}).root, "/tmp/repo");
   assert.equal(parseArgs(["workspace", "list", "--json"], {}).json, true);
   assert.equal(parseArgs(["workspace", "remove", "repo"], {}).id, "repo");
+});
+
+test("suggestWorkspaceId keeps safe folder names and hashes the rest", () => {
+  assert.equal(suggestWorkspaceId("/Users/me/02_LDI"), "02_LDI");
+  assert.match(suggestWorkspaceId("/Users/me/연구"), /^ws-[0-9a-f]{8}$/);
+  assert.equal(suggestWorkspaceId("/Users/me/02_LDI", ["02_LDI"]), "02_LDI-2");
 });
 
 test("parseArgs gives a migration error for removed single-root mode", () => {
@@ -357,4 +364,17 @@ test("workspace CLI persists add, list, and remove operations", async (t) => {
   assert.equal(listed.workspaces[0].workspace_id, "repo");
   await cli(["workspace", "remove", "repo", "--registry", registry]);
   assert.equal(JSON.parse((await cli(["workspace", "list", "--json", "--registry", registry])).stdout).workspaces.length, 0);
+});
+
+test("workspace add-folder allocates an id from the folder name", async (t) => {
+  const home = await tempDir(t, "cli-folder-");
+  const registry = path.join(home, "workspaces.json");
+  const parent = await tempDir(t, "02_LDI-");
+  const root = path.join(parent, "02_LDI");
+  await fs.mkdir(root);
+  await fs.writeFile(path.join(root, "README.md"), "ldi\n");
+  const added = JSON.parse((await cli(["workspace", "add-folder", root, "--registry", registry])).stdout);
+  assert.equal(added.workspace.workspace_id, "02_LDI");
+  assert.equal(added.workspace.display_name, "02_LDI");
+  assert.equal(added.workspace.commands_config, null);
 });

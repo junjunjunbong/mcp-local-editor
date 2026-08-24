@@ -337,10 +337,15 @@ export class SingleUserOAuth {
     if (formValue(params, "response_type", { required: true }) !== "code") {
       throw new OAuthRequestError("unsupported_response_type", "response_type must be code");
     }
-    const codeChallenge = formValue(params, "code_challenge", { required: true });
-    if (!/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) throw new OAuthRequestError("invalid_request", "code_challenge is invalid");
-    if (formValue(params, "code_challenge_method", { required: true }) !== "S256") {
-      throw new OAuthRequestError("invalid_request", "code_challenge_method must be S256");
+    const codeChallenge = formValue(params, "code_challenge");
+    const codeChallengeMethod = formValue(params, "code_challenge_method");
+    if (codeChallenge || codeChallengeMethod) {
+      if (!codeChallenge || !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) {
+        throw new OAuthRequestError("invalid_request", "code_challenge is invalid");
+      }
+      if ((codeChallengeMethod ?? "S256") !== "S256") {
+        throw new OAuthRequestError("invalid_request", "code_challenge_method must be S256");
+      }
     }
     const resource = formValue(params, "resource") ?? this.resourceUrl;
     if (resource !== this.resourceUrl) throw new OAuthRequestError("invalid_target", "resource does not match this MCP server");
@@ -464,8 +469,12 @@ ${errorMessage ? `<p class="error">${escapeHtml(errorMessage)}</p>` : ""}
         if (formValue(form, "redirect_uri", { required: true }) !== record.redirectUri) {
           throw new OAuthRequestError("invalid_grant", "redirect_uri does not match");
         }
-        const verifier = formValue(form, "code_verifier", { required: true });
-        if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !safeEqual(record.codeChallenge, pkceChallenge(verifier))) {
+        if (record.codeChallenge) {
+          const verifier = formValue(form, "code_verifier", { required: true });
+          if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) || !safeEqual(record.codeChallenge, pkceChallenge(verifier))) {
+            throw new OAuthRequestError("invalid_grant", "PKCE verification failed");
+          }
+        } else if (formValue(form, "code_verifier")) {
           throw new OAuthRequestError("invalid_grant", "PKCE verification failed");
         }
         const resource = formValue(form, "resource") ?? record.resource;

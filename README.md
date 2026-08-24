@@ -79,6 +79,26 @@ mcp-local-editor workspace remove ai-research-harness
 
 Use `--replace --no-commands` to remove an inherited command configuration.
 
+Pick a folder without choosing an id (used by the macOS menu bar):
+
+```bash
+mcp-local-editor workspace add-folder /Users/junwon/GDrive/3_연구/02_LDI
+```
+
+## macOS menu bar
+
+A small menu-bar app can keep the Secure MCP Tunnel up and add folders through Finder:
+
+- 터널 켜기 / 끄기, with optional start at login
+- 상태 페이지에서 폴더 추가/삭제 (`http://127.0.0.1:8791/`)
+
+```bash
+chmod +x macos/keep-tunnel.sh macos/install-gui.sh
+./macos/install-gui.sh
+```
+
+Put the runtime key and `org-` id in `~/.config/tunnel-client/local-read.env` if that file is still empty. Stop any foreground `tunnel-client run` first so port 8080 is free, then open **Local Editor** from Applications and choose **터널 켜기**.
+
 The default registry is stored next to this package in the Git-ignored file `workspaces.local.json`. Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
 
 ## Local stdio MCP

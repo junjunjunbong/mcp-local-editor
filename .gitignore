@@ -10,3 +10,4 @@ workspaces.local.json
 .mcp-local-editor.local.json
 .mcp-local-editor-token
 .mcp-local-editor-owner-token
+macos/dist/

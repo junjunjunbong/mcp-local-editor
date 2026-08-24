@@ -55,6 +55,7 @@ test("OpenAPI document exposes one authenticated POST operation per action route
   const document = buildOpenApiDocument({ serverUrl: "https://editor.example.com", toolDefinitions: TOOL_DEFINITIONS });
   assert.equal(document.openapi, "3.1.0");
   assert.equal(document.servers[0].url, "https://editor.example.com");
+  assert.deepEqual(document.components.schemas, {});
   assert.equal(Object.keys(document.paths).length, ACTION_ROUTES.length);
   for (const route of ACTION_ROUTES) {
     assert.equal(document.paths[route.path].post.operationId, route.operationId);

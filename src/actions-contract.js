@@ -185,6 +185,7 @@ export function buildOpenApiDocument({ serverUrl, toolDefinitions }) {
     },
     servers: [{ url: normalizedUrl }],
     components: {
+      schemas: {},
       securitySchemes: {
         bearerAuth: {
           type: "http",
