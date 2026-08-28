@@ -91,6 +91,11 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'EOF'
   <true/>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
 </dict>
 </plist>
 EOF
