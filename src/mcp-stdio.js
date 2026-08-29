@@ -2,7 +2,7 @@ import readline from "node:readline";
 import { asToolError, ToolError } from "./errors.js";
 import { TOOL_DEFINITIONS } from "./service.js";
 
-const SERVER_INFO = { name: "mcp-local-editor", version: "0.2.0" };
+const SERVER_INFO = { name: "mcp-local-editor", version: "0.2.1" };
 const MODERN_PROTOCOL_VERSION = "2026-07-28";
 const LEGACY_PROTOCOL_VERSIONS = new Set(["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]);
 

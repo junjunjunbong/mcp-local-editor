@@ -9,7 +9,7 @@ import { defaultRegistryPath, WorkspaceRegistry } from "./registry.js";
 import { LocalEditorService, TOOL_DEFINITIONS } from "./service.js";
 import { SessionManager } from "./sessions.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const DEFAULT_TTL = 1800;
 
 function usage() {

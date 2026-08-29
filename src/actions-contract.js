@@ -179,7 +179,7 @@ export function buildOpenApiDocument({ serverUrl, toolDefinitions }) {
     openapi: "3.1.0",
     info: {
       title: "MCP Local Editor Actions",
-      version: "0.2.0",
+      version: "0.2.1",
       description:
         "Authenticated actions for selecting an operator-registered local workspace, reading and editing existing files, running allowlisted checks, and reviewing Git diffs."
     },

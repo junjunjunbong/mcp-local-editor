@@ -12,7 +12,7 @@ import { LocalEditorService, normalizeToolProfile } from "./service.js";
 import { SessionManager } from "./sessions.js";
 import { runChatGptSetup } from "./setup-chatgpt.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const DEFAULT_TTL = 1800;
 
 function usage() {

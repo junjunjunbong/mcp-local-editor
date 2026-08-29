@@ -1,12 +1,12 @@
 {
   "name": "mcp-local-editor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Use ChatGPT Web like a local coding agent through a guarded OAuth MCP bridge.",
   "type": "module",
   "bin": {
-    "mcp-local-editor": "./src/cli.js",
-    "mcp-local-editor-mcp": "./src/mcp-http-cli.js",
-    "mcp-local-editor-actions": "./src/actions-cli.js"
+    "mcp-local-editor": "src/cli.js",
+    "mcp-local-editor-mcp": "src/mcp-http-cli.js",
+    "mcp-local-editor-actions": "src/actions-cli.js"
   },
   "scripts": {
     "start": "node src/cli.js serve",
@@ -48,6 +48,7 @@
     "examples/",
     "macos/",
     "README.md",
+    "README.ko.md",
     "LICENSE"
   ],
   "publishConfig": {

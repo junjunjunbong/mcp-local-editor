@@ -1,5 +1,9 @@
 # MCP Local Editor
 
+<p align="center">
+  <strong>English</strong> · <a href="https://github.com/junjunjunbong/mcp-local-editor/blob/main/README.ko.md">한국어</a>
+</p>
+
 **Use ChatGPT Web like a local coding agent.** ChatGPT does the reasoning; MCP Local Editor gives it guarded access to search, read, edit, test, and review files on your computer.
 
 [![npm](https://img.shields.io/npm/v/mcp-local-editor)](https://www.npmjs.com/package/mcp-local-editor)
@@ -59,19 +63,6 @@ ordinary ChatGPT Web conversation
 - **The whole disk is not exposed.** ChatGPT sees registered workspace ids, not arbitrary absolute paths.
 - **Read-only is a real server profile.** Write tools disappear from tool discovery and cannot be enabled by changing a tool argument.
 - **Useful outside ChatGPT too.** The same core works over stdio MCP and an authenticated Actions adapter.
-
-## 한국어 빠른 안내
-
-이 프로젝트의 핵심은 **ChatGPT 웹을 그대로 쓰면서 로컬 프로젝트까지 직접 다루게 하는 것**입니다. 별도의 API 키나 별도 LLM을 붙이지 않습니다. ChatGPT가 판단하고, 이 프로그램이 등록된 폴더 안에서 검색·읽기·수정·테스트·Git diff 확인을 수행합니다.
-
-```bash
-brew install node cloudflared ripgrep
-npx mcp-local-editor@latest setup-chatgpt /절대/경로/프로젝트
-```
-
-출력된 `MCP URL`을 ChatGPT 개발자 모드 앱에 OAuth 방식으로 등록하고, 로컬 토큰 파일의 값을 승인 화면에 붙여 넣으면 됩니다. 터미널은 사용하는 동안 켜 두어야 하며, 임시 주소는 재시작할 때 바뀝니다.
-
-“무제한”을 보장하거나 제한을 우회하는 도구는 아닙니다. **이 프로그램 자체가 OpenAI API 사용량을 추가로 만들지 않는다**는 뜻이며, ChatGPT 요금제와 모델별 사용량 제한은 그대로 적용됩니다.
 
 ## Example workflow
 

@@ -109,7 +109,7 @@ test("published CLI entrypoints run through npm-style symlinks", {
     const link = path.join(directory, name);
     await fs.symlink(target, link);
     const result = await execFileAsync(link, ["--version"], { encoding: "utf8" });
-    assert.equal(result.stdout.trim(), "0.2.0");
+    assert.equal(result.stdout.trim(), "0.2.1");
   }
 });
 
@@ -395,11 +395,11 @@ test("MCP returns session failures as tool errors", async (t) => {
   assert.equal(responses[0].result.structuredContent.error.code, "SESSION_NOT_FOUND");
 });
 
-test("modern discovery advertises version 0.2.0 and session workflow", async (t) => {
+test("modern discovery advertises version 0.2.1 and session workflow", async (t) => {
   const registry = new WorkspaceRegistry(path.join(await tempDir(t), "registry.json"));
   const { service } = makeService(registry);
   const responses = await mcpSession(service, [{ jsonrpc: "2.0", id: 1, method: "server/discover", params: {} }]);
-  assert.equal(responses[0].result._meta["io.modelcontextprotocol/serverInfo"].version, "0.2.0");
+  assert.equal(responses[0].result._meta["io.modelcontextprotocol/serverInfo"].version, "0.2.1");
   assert.match(responses[0].result.instructions, /workspace_open/);
 });
 

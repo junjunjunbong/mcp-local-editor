@@ -200,7 +200,7 @@ export class ActionsHttpServer {
     const pathname = requestUrl.pathname;
 
     if (request.method === "GET" && pathname === "/healthz") {
-      jsonResponse(response, 200, { ok: true, service: "mcp-local-editor", version: "0.2.0", status: "ready" });
+      jsonResponse(response, 200, { ok: true, service: "mcp-local-editor", version: "0.2.1", status: "ready" });
       return;
     }
 
