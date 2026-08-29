@@ -33,25 +33,26 @@ This remains a workspace guard rather than an operating-system sandbox. Register
 Register each local folder once:
 
 ```bash
-npm link
+npm install --global mcp-local-editor@latest
 
 mcp-local-editor workspace add \
-  mcp-local-editor \
-  /Users/junwon/Projects/mcp-local-editor \
-  --display-name "MCP Local Editor" \
+  my-project \
+  /absolute/path/to/my-project \
+  --display-name "My Project" \
   --commands commands.local.json
 ```
 
-The default registry is the Git-ignored `workspaces.local.json` next to this package.
+New installations store the registry at `~/.config/mcp-local-editor/workspaces.json` by default. Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
 
 ## 2. Create a bearer token
 
 The server requires a token of at least 32 characters. A local token file avoids putting the secret in shell history or the process list.
 
 ```bash
-cd /Users/junwon/Projects/mcp-local-editor
 umask 077
-openssl rand -hex 32 > .mcp-local-editor-token
+mkdir -p ~/.config/mcp-local-editor
+openssl rand -hex 32 > ~/.config/mcp-local-editor/.mcp-local-editor-token
+chmod 600 ~/.config/mcp-local-editor/.mcp-local-editor-token
 ```
 
 The default `.gitignore` excludes `.mcp-local-editor-token`.
@@ -68,7 +69,7 @@ Do not pass a token as a command-line argument. The CLI rejects `--token` becaus
 
 ```bash
 mcp-local-editor-actions \
-  --token-file .mcp-local-editor-token \
+  --token-file ~/.config/mcp-local-editor/.mcp-local-editor-token \
   --host 127.0.0.1 \
   --port 8787
 ```
@@ -83,7 +84,7 @@ curl http://127.0.0.1:8787/openapi.json
 Test an authenticated action:
 
 ```bash
-TOKEN="$(cat .mcp-local-editor-token)"
+TOKEN="$(cat ~/.config/mcp-local-editor/.mcp-local-editor-token)"
 
 curl \
   -H "Authorization: Bearer $TOKEN" \
@@ -143,7 +144,7 @@ OpenAI's current Actions setup guide is:
 
 - https://help.openai.com/en/articles/9442513
 
-At the time this document was written, a GPT can use Actions or Apps but not both, and custom Actions are not available in Pro mode. The GPT editor therefore offers only non-Pro models that support Actions.
+ChatGPT product availability and supported models can change. Treat the current GPT editor and OpenAI documentation as authoritative.
 
 ## Recommended GPT instructions
 

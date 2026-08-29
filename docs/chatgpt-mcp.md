@@ -1,230 +1,186 @@
-# ChatGPT custom MCP app setup
+# Connect MCP Local Editor to ChatGPT Web
 
-This guide connects `mcp-local-editor` to normal ChatGPT conversations as a custom MCP app. The existing Custom GPT Actions adapter remains available, but it is no longer the only web integration.
+This guide connects a local folder to an ordinary ChatGPT Web conversation through a developer-mode MCP app. ChatGPT supplies the model and reasoning loop; MCP Local Editor supplies bounded local tools.
 
-## Choose a tool profile
+The bridge does not call the OpenAI API, but it does not remove or bypass ChatGPT limits. Plan eligibility, model availability, usage limits, workspace policies, and confirmation behavior remain controlled by ChatGPT.
 
-The server has two independently enforced profiles.
+## Fast route: temporary quick tunnel
+
+Install the prerequisites. On macOS:
+
+```bash
+brew install node cloudflared ripgrep
+```
+
+Git is also required for `git_diff`. Then run:
+
+```bash
+npx mcp-local-editor@latest setup-chatgpt /absolute/path/to/project
+```
+
+To expose a command policy stored inside the project:
+
+```bash
+npx mcp-local-editor@latest setup-chatgpt \
+  /absolute/path/to/project \
+  --commands commands.local.json
+```
+
+The setup command:
+
+1. registers or reuses the folder as a workspace;
+2. creates a private owner-token file if one does not exist;
+3. launches a Cloudflare Quick Tunnel to a loopback-only MCP server;
+4. starts Streamable HTTP MCP with OAuth and the `full` tool profile;
+5. prints the MCP URL and local token path without printing the token itself.
+
+Use `--profile read` if ChatGPT should only search, read, and inspect Git diffs.
+
+## Create the app in ChatGPT
+
+OpenAI's current developer-mode flow is:
+
+1. In ChatGPT Web, open **Settings → Security and login** and enable **Developer mode**.
+2. Open [ChatGPT Plugins](https://chatgpt.com/plugins).
+3. Select **+** and create a developer-mode app.
+4. Paste the `MCP URL` printed by the terminal.
+5. Select **OAuth** authentication.
+6. When the local approval page opens, read the printed owner-token file and paste its value.
+7. Start a normal conversation, choose **Developer mode** from the plus menu, and enable the app.
+
+OpenAI documents the current eligibility, UI, protocol, and confirmation behavior in the [ChatGPT developer-mode guide](https://developers.openai.com/api/docs/guides/developer-mode). Availability can change, so treat that page as authoritative.
+
+A useful first prompt is:
+
+```text
+Use MCP Local Editor only. List the registered workspaces, open my-project,
+read its README, and show the current Git diff.
+```
+
+For an edit:
+
+```text
+Use MCP Local Editor only. Open my-project with write access. Make the requested
+change, run the available test command, and inspect the Git diff. Do not claim
+success unless the command exits with code 0 and the diff confirms the edit.
+```
+
+Keep `setup-chatgpt` running while the app is in use. Press `Ctrl-C` to stop both the MCP server and tunnel.
+
+## Temporary URL behavior
+
+Cloudflare Quick Tunnel hostnames change when the process restarts. OAuth access and refresh tokens are bound to the MCP resource URL. After a restart:
+
+1. copy the new printed MCP URL;
+2. update or recreate the developer-mode app;
+3. complete OAuth approval again.
+
+Use a fixed hostname or OpenAI's [Secure MCP Tunnel](https://github.com/openai/tunnel-client) for a durable connection.
+
+## Tool profiles
 
 | Profile | Tools | Intended use |
 | --- | --- | --- |
-| `read` | workspace list/open, search, read, Git diff | ChatGPT accounts or workspaces that permit read/fetch tools only |
-| `full` | all seven tools, including edit and allowlisted commands | MCP clients and ChatGPT workspaces that permit modify tools |
+| `read` | workspace list/open, search, read, Git diff | Evaluation and review-only access |
+| `full` | all seven tools, including edit and command execution | Local coding work with write confirmations |
 
-The remote MCP CLI defaults to `read`. A client cannot turn a read session into a write session by changing arguments: the write tools are omitted from discovery, `workspace_open` has no `access` field, and the service forces `access: read`.
+Read-only mode is enforced by the server: write tools are omitted from discovery, `workspace_open` cannot request write access, and every opened session is forced to read access. A client cannot upgrade it by changing arguments.
 
-The stdio CLI remains `full` by default for backward compatibility.
+The `full` profile still requires `workspace_open` with `access: "write"` before `file_edit` or `command_run` succeeds.
 
-```bash
-mcp-local-editor serve --profile full
-mcp-local-editor serve --profile read
-```
+## Local state
 
-## Route A: OpenAI Secure MCP Tunnel
-
-Use this route when the local stdio process should not be exposed through a public reverse proxy.
-
-1. Register the workspaces normally.
-2. Configure OpenAI's Secure MCP Tunnel to launch:
-
-```bash
-node /absolute/path/to/mcp-local-editor/src/cli.js serve --profile read
-```
-
-3. Register the tunnel connection as a custom app in ChatGPT developer mode.
-4. Enable the app in a normal conversation.
-
-The official tunnel client and its current setup commands are maintained at:
-
-- https://github.com/openai/tunnel-client
-
-For a full-capability workspace, replace `--profile read` with `--profile full` only when the ChatGPT workspace permits modify tools.
-
-## Route B: direct HTTPS MCP with local OAuth
-
-This repository includes a dependency-free stateless Streamable HTTP server at `/mcp`. It implements single-owner OAuth authorization-code flow with PKCE.
-
-### 1. Register a workspace
-
-```bash
-cd /Users/junwon/Projects/mcp-local-editor
-npm link
-
-mcp-local-editor workspace add \
-  my-project \
-  /Users/junwon/Projects/my-project \
-  --display-name "My Project" \
-  --commands /Users/junwon/Projects/my-project/commands.local.json
-```
-
-Commands are optional. The read profile never exposes or executes them.
-
-### 2. Create the owner token
-
-```bash
-cd /Users/junwon/Projects/mcp-local-editor
-umask 077
-openssl rand -hex 32 > .mcp-local-editor-token
-chmod 600 .mcp-local-editor-token
-```
-
-The OAuth approval page checks this token locally. The token is not returned to ChatGPT and is not stored in the OAuth state file.
-
-### 3. Provide a public HTTPS origin
-
-A fixed hostname is preferable. For a temporary Cloudflare route, run this in one terminal:
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:8790
-```
-
-Copy the generated origin, for example:
+For a new npm installation, the default state is under:
 
 ```text
-https://example.trycloudflare.com
+~/.config/mcp-local-editor/workspaces.json
+~/.config/mcp-local-editor/workspaces.json.oauth.json
+~/.config/mcp-local-editor/.mcp-local-editor-owner-token
 ```
 
-The server's `--public-url` value must be the origin only. Do not append `/mcp`.
+The registry and OAuth files are mode `0600` on POSIX systems. OAuth access and refresh tokens are stored only as SHA-256 hashes. Override paths with:
 
-### 4. Start the remote MCP server
+```text
+MCP_LOCAL_EDITOR_REGISTRY
+MCP_LOCAL_EDITOR_HOME
+XDG_CONFIG_HOME
+MCP_LOCAL_EDITOR_OWNER_TOKEN_FILE
+MCP_LOCAL_EDITOR_OAUTH_STORE
+```
+
+Source checkouts with an existing `workspaces.local.json` keep using it for backward compatibility.
+
+## Stable route: direct HTTPS MCP
+
+Install the CLI globally so all package binaries are available:
+
+```bash
+npm install --global mcp-local-editor@latest
+```
+
+Register a workspace:
+
+```bash
+mcp-local-editor workspace add \
+  my-project \
+  /absolute/path/to/project \
+  --display-name "My Project" \
+  --commands commands.local.json
+```
+
+Create a private owner token:
+
+```bash
+umask 077
+openssl rand -hex 32 > ~/.config/mcp-local-editor/.mcp-local-editor-owner-token
+chmod 600 ~/.config/mcp-local-editor/.mcp-local-editor-owner-token
+```
+
+Expose `127.0.0.1:8790` through a stable HTTPS reverse proxy, then start the server. `--public-url` is the public origin without `/mcp`.
 
 ```bash
 mcp-local-editor-mcp \
   --host 127.0.0.1 \
   --port 8790 \
-  --public-url https://example.trycloudflare.com \
-  --owner-token-file /Users/junwon/Projects/mcp-local-editor/.mcp-local-editor-token \
-  --profile read
-```
-
-The server prints the local listener, public MCP endpoint, active tool profile, authentication mode, registry path, and OAuth state path. It never prints the token.
-
-Verify discovery before registering the app:
-
-```bash
-curl -sS https://example.trycloudflare.com/.well-known/oauth-protected-resource/mcp
-curl -sS https://example.trycloudflare.com/.well-known/oauth-authorization-server
-curl -sS https://example.trycloudflare.com/healthz
-```
-
-The MCP endpoint itself should return an authorization challenge when called without a bearer token.
-
-```bash
-curl -i \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  https://example.trycloudflare.com/mcp
-```
-
-Expected status: `401 Unauthorized`, with a `WWW-Authenticate` header referring to the protected-resource metadata URL.
-
-### 5. Create the ChatGPT app
-
-In ChatGPT developer mode, create a custom MCP app using:
-
-```text
-MCP URL: https://example.trycloudflare.com/mcp
-Authentication: OAuth
-```
-
-ChatGPT dynamically registers an OAuth public client. The authorization page opens from the local MCP server. Paste the owner token from `.mcp-local-editor-token` to approve the connection.
-
-After authorization, enable the app in a normal ChatGPT conversation. A useful first request is:
-
-```text
-Use MCP Local Editor. List the registered workspaces, open my-project, read its README, and show the current Git diff.
-```
-
-### 6. Full profile
-
-Use full mode only when the client and ChatGPT workspace permit modify tools:
-
-```bash
-mcp-local-editor-mcp \
   --public-url https://editor.example.com \
-  --owner-token-file /Users/junwon/Projects/mcp-local-editor/.mcp-local-editor-token \
+  --owner-token-file ~/.config/mcp-local-editor/.mcp-local-editor-owner-token \
   --profile full
 ```
 
-The full profile still requires a write workspace session before `file_edit` or `command_run` can succeed.
+Register this app in ChatGPT:
+
+```text
+MCP URL: https://editor.example.com/mcp
+Authentication: OAuth
+```
+
+Verify the deployment before connecting ChatGPT:
+
+```bash
+curl -sS https://editor.example.com/healthz
+curl -sS https://editor.example.com/.well-known/oauth-protected-resource/mcp
+curl -sS https://editor.example.com/.well-known/oauth-authorization-server
+```
+
+An unauthenticated call to `/mcp` should return `401 Unauthorized` with a `WWW-Authenticate` header.
 
 ## OAuth behavior
 
-The remote server exposes:
+The bundled server implements a single-owner OAuth authorization-code flow with:
 
-- `/.well-known/oauth-protected-resource`
-- `/.well-known/oauth-protected-resource/mcp`
-- `/.well-known/oauth-authorization-server`
-- `/.well-known/openid-configuration` as a compatibility alias
-- `/register`
-- `/authorize`
-- `/token`
-- `/revoke`
-- `/mcp`
-
-Security properties include:
-
-- authorization code lifetime of 5 minutes
-- PKCE S256 required for every authorization
-- one-time authorization codes
-- rotating refresh tokens
-- bearer-token revocation
-- owner-token attempt limiting
-- dynamic-client registration limiting and bounded state
+- PKCE S256 on every authorization
+- one-time, five-minute authorization codes
+- dynamic client registration
+- rotating refresh tokens and bearer-token revocation
 - strict redirect URI validation
 - Host and Origin validation
-- bounded request bodies
-- atomic OAuth state writes with a process-safe lock
-- access and refresh tokens persisted only as SHA-256 hashes
-- mode `0600` for OAuth state on POSIX systems
+- bounded requests and rate limits
+- process-safe, atomic OAuth state writes
+- hashed persisted access and refresh tokens
 
-The implementation is single-owner OAuth for a trusted local development machine. It is not a general multi-tenant identity provider.
+The owner token is checked by the local approval page and is not returned to ChatGPT. This is designed for one trusted local operator, not as a general multi-tenant identity provider.
 
-## Local state
-
-The default files are:
-
-```text
-workspaces.local.json
-workspaces.local.json.oauth.json
-.mcp-local-editor-token
-```
-
-All are ignored by Git. Override locations with:
-
-```text
-MCP_LOCAL_EDITOR_REGISTRY
-MCP_LOCAL_EDITOR_OWNER_TOKEN_FILE
-MCP_LOCAL_EDITOR_OAUTH_STORE
-```
-
-Other remote MCP environment settings:
-
-```text
-MCP_LOCAL_EDITOR_SESSION_TTL_SEC
-MCP_LOCAL_EDITOR_MCP_PROFILE
-MCP_LOCAL_EDITOR_MCP_HOST
-MCP_LOCAL_EDITOR_MCP_PORT
-MCP_LOCAL_EDITOR_MCP_PUBLIC_URL
-MCP_LOCAL_EDITOR_MCP_AUTH
-MCP_LOCAL_EDITOR_ALLOW_UNAUTHENTICATED
-```
-
-## Public URL changes
-
-Access and refresh tokens are bound to the configured MCP resource URL. If a temporary tunnel hostname changes:
-
-1. stop the old MCP process;
-2. start the new tunnel;
-3. restart `mcp-local-editor-mcp` with the new `--public-url`;
-4. reconnect or reauthorize the ChatGPT app.
-
-Old tokens will not authorize a different MCP resource URL. To remove old client registrations as well, delete the OAuth state file while the MCP process is stopped.
-
-## Unauthenticated local mode
-
-No-auth mode requires an explicit acknowledgement:
+Unauthenticated mode requires both flags below and must not be exposed directly to the public internet:
 
 ```bash
 mcp-local-editor-mcp \
@@ -233,50 +189,42 @@ mcp-local-editor-mcp \
   --public-url http://127.0.0.1:8790
 ```
 
-Use this only for loopback development or behind a separately authenticated tunnel. Never expose it directly to the public internet.
-
 ## Troubleshooting
 
-### ChatGPT reports that authorization metadata is missing
+### `CLOUDFLARED_NOT_FOUND`
 
-Check both metadata endpoints with `curl`. Confirm that `--public-url` exactly matches the externally visible HTTPS origin and that the app URL ends in `/mcp`.
+Install `cloudflared`, confirm `cloudflared --version` works, and rerun the setup command. A nonstandard executable can be selected with `--cloudflared /absolute/path/to/cloudflared`.
 
-### The approval page opens but the callback fails
+### Port 8790 is already in use
 
-The registered redirect URI must be an HTTPS URL under `chatgpt.com` or `openai.com`, or a loopback HTTP URI for local testing. Additional HTTPS redirect hosts can be added explicitly:
-
-```bash
-mcp-local-editor-mcp \
-  --redirect-host auth.example.com \
-  --public-url https://editor.example.com \
-  --owner-token-file .mcp-local-editor-token
-```
-
-### The app connects but edit tools are absent
-
-The remote CLI defaults to `--profile read`. Start it with `--profile full`, then refresh the app's tool discovery. The ChatGPT plan or workspace must also permit modify tools.
-
-### `workspace_open` succeeds but later calls say the session expired
-
-Workspace sessions default to 30 minutes and are kept in memory. Reopen the workspace or raise the bounded TTL:
+Choose another local port:
 
 ```bash
-mcp-local-editor-mcp --session-ttl-sec 3600 ...
+npx mcp-local-editor@latest setup-chatgpt /absolute/path/to/project --port 8890
 ```
 
-### A temporary tunnel restarts and the app stops authenticating
+### Authorization metadata is missing
 
-Temporary tunnel hostnames can change. Update `--public-url` and reauthorize. Use a fixed hostname or Secure MCP Tunnel to avoid that churn.
+Confirm the app URL ends in `/mcp`, the terminal process is still running, and the quick-tunnel URL has not changed. Check the two `/.well-known/` endpoints shown above.
 
-## Migrating from Actions
+### The approval page opens but callback validation fails
 
-The Actions adapter remains available and unchanged:
+Current ChatGPT callbacks should be accepted automatically. For another HTTPS callback host on the manual server, repeat `--redirect-host hostname.example` as needed.
 
-```bash
-mcp-local-editor-actions \
-  --token-file .mcp-local-editor-token \
-  --host 127.0.0.1 \
-  --port 8787
-```
+### Edit tools are absent
 
-Use Actions only for an existing Custom GPT workflow. Use `/mcp` when the tool should appear as a custom app in normal ChatGPT conversations with MCP-native discovery and OAuth.
+The server is probably running with `--profile read`, or the ChatGPT account/workspace does not allow modify tools. Restart with `--profile full`, then refresh the app's tools. Follow the official ChatGPT documentation for account-side availability.
+
+### A workspace session expired
+
+Sessions default to 30 minutes and live only in memory. Ask ChatGPT to open the workspace again, or use `--session-ttl-sec 3600`.
+
+### The tunnel restarts and authentication stops working
+
+Quick-tunnel hostnames are temporary and tokens are resource-bound. Reconnect with the new URL or use a stable hostname.
+
+## Other routes
+
+- For local MCP hosts, run `mcp-local-editor serve` over stdio.
+- For OpenAI Secure MCP Tunnel, configure it to launch `mcp-local-editor serve --profile read` or `--profile full`.
+- For an existing Custom GPT Actions workflow, follow [chatgpt-actions.md](chatgpt-actions.md).

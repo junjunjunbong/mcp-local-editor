@@ -1,225 +1,143 @@
-# mcp-local-editor
+# MCP Local Editor
 
-A workspace guard for MCP clients and ChatGPT.
+**Use ChatGPT Web like a local coding agent.** ChatGPT does the reasoning; MCP Local Editor gives it guarded access to search, read, edit, test, and review files on your computer.
 
-The client supplies the reasoning loop. This server does not run a model, spawn an agent, or talk to an API provider. An operator registers local folders; the client may then search, read, inspect Git diffs, and — only in the full profile — edit files or run allowlisted commands inside those folders.
+[![npm](https://img.shields.io/npm/v/mcp-local-editor)](https://www.npmjs.com/package/mcp-local-editor)
+[![CI](https://github.com/junjunjunbong/mcp-local-editor/actions/workflows/ci.yml/badge.svg)](https://github.com/junjunjunbong/mcp-local-editor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-The same service is available on three transports:
+No OpenAI API key. No second model. No model calls from this package. You keep using your existing ChatGPT account in an ordinary web conversation while the local bridge performs only the operations you expose.
 
-| Transport | Command | Typical client |
-| --- | --- | --- |
-| stdio MCP | `mcp-local-editor serve` | Claude Desktop, Cursor, and other local MCP hosts |
-| Streamable HTTP MCP | `mcp-local-editor-mcp` | ChatGPT custom apps |
-| Authenticated HTTP Actions | `mcp-local-editor-actions` | Existing Custom GPT Actions |
+> MCP Local Editor does **not** bypass ChatGPT limits. Your ChatGPT plan, model availability, usage limits, and workspace policies still apply. This is an independent open-source project and is not affiliated with or endorsed by OpenAI.
 
-Remote MCP can be registered as a ChatGPT custom app and used in ordinary conversations. It is not tied to a Custom GPT.
+## One-command ChatGPT setup
 
-There are no npm runtime dependencies.
-
-## Why this exists
-
-Most local MCP servers try to become a coding agent: a shell, the whole disk, commits, and a long tool list. This one stays a guard.
-
-- Only operator-registered workspace ids can be opened.
-- Models never see absolute local paths from `workspace_list`.
-- Remote MCP defaults to a read-only profile.
-- Git is inspection only. There is no commit or push.
-- Commands are argv arrays from an operator file, not a shell string.
-
-Use it when uncommitted, ignored, or otherwise local-only text needs to be visible to a model you already pay for. Use a coding agent when you want the model to own the loop.
-
-## Tools
-
-| Tool | `read` | `full` | Role |
-| --- | :---: | :---: | --- |
-| `workspace_list` | yes | yes | List registered ids and availability |
-| `workspace_open` | read session only | read or write | Open a short-lived session |
-| `repo_search` | yes | yes | ripgrep inside the session workspace |
-| `file_read` | yes | yes | Bounded UTF-8 read plus SHA-256 |
-| `git_diff` | yes | yes | Status and diffs, no Git writes |
-| `file_edit` | — | write session | Exact-text replacements with a current hash |
-| `command_run` | — | write session | Allowlisted argv, or unlisted argv when the workspace opts in |
-
-Read-only mode is enforced three times: write tools are omitted from MCP discovery, `workspace_open` has no `access` field, and the service forces a read session and withholds command identifiers.
-
-stdio defaults to `full`. Remote MCP defaults to `read`. A client cannot turn a read profile into a write session by changing arguments.
-
-## Requirements
-
-- Node.js 20 or newer
-- Git, for `git_diff`
-- ripgrep (`rg`), for `repo_search`
-- An HTTPS origin when ChatGPT connects to the remote MCP server directly
-
-From a local checkout:
+Requirements: Node.js 20+, `cloudflared`, Git, and [ripgrep](https://github.com/BurntSushi/ripgrep). On macOS with Homebrew:
 
 ```bash
-npm link
+brew install node cloudflared ripgrep
 ```
 
-The package is not published to npm. `npm link` installs the three binaries from this tree: `mcp-local-editor`, `mcp-local-editor-mcp`, and `mcp-local-editor-actions`.
+Then point MCP Local Editor at a folder:
 
-## Register workspaces
+```bash
+npx mcp-local-editor@latest setup-chatgpt /absolute/path/to/your/project
+```
 
-A folder is registered once and can stay anywhere on the machine.
+The command registers the folder, creates a private owner token, starts an OAuth MCP server, opens a temporary HTTPS tunnel, and prints one `MCP URL`.
+
+In ChatGPT Web:
+
+1. Open **Settings → Security and login** and enable **Developer mode**.
+2. Open [ChatGPT Plugins](https://chatgpt.com/plugins), select **+**, and create a developer-mode app.
+3. Paste the printed MCP URL and select **OAuth**.
+4. When the local approval page opens, paste the token stored at the printed owner-token path.
+5. In a chat, choose **Developer mode** from the plus menu and enable the app.
+
+Keep the terminal command running while you use the app. The quick-tunnel hostname is temporary; after a restart, reconnect the app with the newly printed URL. See the [complete ChatGPT setup guide](docs/chatgpt-mcp.md) for stable-hostname and manual options.
+
+OpenAI currently documents ChatGPT developer mode as supporting remote streaming HTTP MCP servers, OAuth, and read/write tools for eligible web accounts. Write actions normally require confirmation. Review the current [official developer-mode guide](https://developers.openai.com/api/docs/guides/developer-mode) before enabling write access.
+
+## What makes it different
+
+```text
+ordinary ChatGPT Web conversation
+              │ reasoning + tool calls
+              ▼
+     OAuth MCP over HTTPS
+              │
+              ▼
+ MCP Local Editor on your machine
+              │ registered workspace only
+              ▼
+ search · read · edit · test · git diff
+```
+
+- **ChatGPT stays the agent.** The package is a local tool bridge, not another LLM wrapper.
+- **No API billing layer.** The bridge never calls an AI API; it uses the ChatGPT conversation you already opened.
+- **Local files really change.** Edits use exact text plus a current file hash, and tests run as argv arrays rather than shell strings.
+- **The whole disk is not exposed.** ChatGPT sees registered workspace ids, not arbitrary absolute paths.
+- **Read-only is a real server profile.** Write tools disappear from tool discovery and cannot be enabled by changing a tool argument.
+- **Useful outside ChatGPT too.** The same core works over stdio MCP and an authenticated Actions adapter.
+
+## 한국어 빠른 안내
+
+이 프로젝트의 핵심은 **ChatGPT 웹을 그대로 쓰면서 로컬 프로젝트까지 직접 다루게 하는 것**입니다. 별도의 API 키나 별도 LLM을 붙이지 않습니다. ChatGPT가 판단하고, 이 프로그램이 등록된 폴더 안에서 검색·읽기·수정·테스트·Git diff 확인을 수행합니다.
+
+```bash
+brew install node cloudflared ripgrep
+npx mcp-local-editor@latest setup-chatgpt /절대/경로/프로젝트
+```
+
+출력된 `MCP URL`을 ChatGPT 개발자 모드 앱에 OAuth 방식으로 등록하고, 로컬 토큰 파일의 값을 승인 화면에 붙여 넣으면 됩니다. 터미널은 사용하는 동안 켜 두어야 하며, 임시 주소는 재시작할 때 바뀝니다.
+
+“무제한”을 보장하거나 제한을 우회하는 도구는 아닙니다. **이 프로그램 자체가 OpenAI API 사용량을 추가로 만들지 않는다**는 뜻이며, ChatGPT 요금제와 모델별 사용량 제한은 그대로 적용됩니다.
+
+## Example workflow
+
+Ask ChatGPT:
+
+```text
+Use MCP Local Editor only. Open the my-project workspace with write access.
+Find where the homepage button label is defined, change it from “Start” to
+“Ship it”, run the available test command, and review the Git diff.
+```
+
+The intended tool sequence is:
+
+```text
+workspace_list
+→ workspace_open({ workspace_id: "my-project", access: "write" })
+→ repo_search / file_read
+→ file_edit with expected_sha256
+→ command_run
+→ git_diff
+```
+
+A tiny recording fixture and a copy-ready walkthrough live in [examples/demo-project](examples/demo-project).
+
+## Tools and profiles
+
+| Tool | `read` | `full` | Purpose |
+| --- | :---: | :---: | --- |
+| `workspace_list` | yes | yes | List registered workspace ids and availability |
+| `workspace_open` | read only | read or write | Create a short-lived workspace-bound session |
+| `repo_search` | yes | yes | Search with ripgrep inside the workspace |
+| `file_read` | yes | yes | Read bounded UTF-8 text and return SHA-256 |
+| `git_diff` | yes | yes | Inspect status and diffs without Git writes |
+| `file_edit` | — | write session | Apply exact-text replacements with hash checking |
+| `command_run` | — | write session | Run configured argv, or opt-in unlisted argv |
+
+`setup-chatgpt` defaults to `full` so the first experience can edit and verify code. Start with read-only access instead when you are evaluating the project:
+
+```bash
+npx mcp-local-editor@latest setup-chatgpt /absolute/path/to/project --profile read
+```
+
+## Workspace and command policy
+
+Registrations are stored in the user config directory on new installs:
+
+```text
+~/.config/mcp-local-editor/workspaces.json
+```
+
+Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`. Existing source checkouts that already contain `workspaces.local.json` continue using that file for backward compatibility.
+
+Register and inspect folders manually:
 
 ```bash
 mcp-local-editor workspace add \
   my-project \
   /absolute/path/to/my-project \
   --display-name "My Project" \
-  --commands commands.example.json
-```
+  --commands commands.local.json
 
-A relative `--commands` path is resolved from that workspace root. Repeat the command for each folder.
-
-```bash
 mcp-local-editor workspace list
-mcp-local-editor workspace list --json
-
-mcp-local-editor workspace add \
-  my-project \
-  /absolute/path/to/moved-project \
-  --replace
-
 mcp-local-editor workspace remove my-project
 ```
 
-`--replace --no-commands` drops an inherited command file. To let the CLI pick an id from the folder name (this is what the macOS menu bar uses):
-
-```bash
-mcp-local-editor workspace add-folder /absolute/path/to/my-project
-```
-
-The default registry is the Git-ignored file `workspaces.local.json` next to this package. Override it with `--registry`, `MCP_LOCAL_EDITOR_REGISTRY`, `MCP_LOCAL_EDITOR_HOME`, or `XDG_CONFIG_HOME`.
-
-`workspace_list` and `workspace_open` reload the registry, so a newly added folder is visible without restarting the server. Sessions live in memory and disappear when the process exits. Registrations stay on disk.
-
-## Local MCP
-
-```bash
-mcp-local-editor serve
-mcp-local-editor serve --profile read
-mcp-local-editor serve --session-ttl-sec 1800
-```
-
-Session lifetime defaults to 30 minutes and can be set between 60 and 3600 seconds.
-
-```json
-{
-  "mcpServers": {
-    "local-editor": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/mcp-local-editor/src/cli.js",
-        "serve",
-        "--profile",
-        "full"
-      ]
-    }
-  }
-}
-```
-
-Typical write-session flow:
-
-```text
-workspace_list()
-workspace_open({workspace_id: "my-project", access: "write"})
-file_read({session_id: "ses_...", path: "README.md"})
-file_edit({session_id: "ses_...", path: "README.md", expected_sha256: "...", replacements: [...]})
-command_run({session_id: "ses_...", command_id: "test"})
-git_diff({session_id: "ses_..."})
-```
-
-In the read profile, `workspace_open` does not accept `access`. A read session may search, read, and inspect diffs. `file_edit` and `command_run` need a write session in the full profile. Removing or replacing a registration revokes its sessions on the next tool call.
-
-## ChatGPT
-
-Two ways to reach a normal ChatGPT conversation; Actions remain a Custom GPT fallback.
-
-### Secure MCP Tunnel
-
-Keep the service on stdio and let [OpenAI's tunnel-client](https://github.com/openai/tunnel-client) launch:
-
-```bash
-node /absolute/path/to/mcp-local-editor/src/cli.js serve --profile read
-```
-
-Register that tunnel connection as a custom app in ChatGPT developer mode. Use `--profile full` only when that ChatGPT workspace is allowed to modify files.
-
-### Direct HTTPS MCP with OAuth
-
-`mcp-local-editor-mcp` is a dependency-free Streamable HTTP endpoint at `/mcp`. It implements authorization-code OAuth with PKCE S256, dynamic client registration, rotating refresh tokens, hashed persisted tokens, owner-token approval, and Host/Origin checks. The remote profile is `read` unless you pass `--profile full`.
-
-```bash
-umask 077
-openssl rand -hex 32 > .mcp-local-editor-token
-chmod 600 .mcp-local-editor-token
-```
-
-Expose `127.0.0.1:8790` through a stable HTTPS reverse proxy. For a temporary Cloudflare route, start the tunnel first, copy the origin, then start the server. Do not put `/mcp` on `--public-url`.
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:8790
-
-mcp-local-editor-mcp \
-  --host 127.0.0.1 \
-  --port 8790 \
-  --public-url https://example.trycloudflare.com \
-  --owner-token-file .mcp-local-editor-token \
-  --profile read
-```
-
-In ChatGPT:
-
-```text
-MCP URL: https://example.trycloudflare.com/mcp
-Authentication: OAuth
-```
-
-Enter the local owner token on the approval page. The token is checked on this machine and is never returned to ChatGPT.
-
-Access and refresh tokens are bound to the configured resource URL. If a temporary hostname changes, restart with the new `--public-url` and authorize again. OAuth state defaults to `<registry-path>.oauth.json` and stores client metadata plus SHA-256 hashes of tokens.
-
-Unauthenticated mode needs both `--auth none` and `--allow-unauthenticated`. Do not expose that combination to the public internet.
-
-Setup and troubleshooting: [docs/chatgpt-mcp.md](docs/chatgpt-mcp.md).
-
-### Actions fallback
-
-```bash
-umask 077
-openssl rand -hex 32 > .mcp-local-editor-token
-
-mcp-local-editor-actions \
-  --token-file .mcp-local-editor-token \
-  --host 127.0.0.1 \
-  --port 8787
-```
-
-Expose port `8787` over HTTPS and import `/openapi.json` into a Custom GPT Action. Prefer the MCP custom-app path for ordinary ChatGPT conversations. Details: [docs/chatgpt-actions.md](docs/chatgpt-actions.md).
-
-## macOS menu bar
-
-A small menu-bar app can keep the Secure MCP Tunnel running and add folders through Finder. The current UI is Korean: **터널 켜기** / **터널 끄기**, optional start at login, and a local status page at `http://127.0.0.1:8791/`.
-
-```bash
-chmod +x macos/keep-tunnel.sh macos/install-gui.sh
-./macos/install-gui.sh
-```
-
-The installer writes `~/.config/tunnel-client/local-read.env` if it is missing. Put the runtime key and `org-` id there, stop any foreground `tunnel-client run` so port 8080 is free, then open **Local Editor** from Applications and choose **터널 켜기**.
-
-The status page is also available without the menu bar:
-
-```bash
-mcp-local-editor dashboard
-```
-
-## Command allowlist
-
-Commands are configured per workspace. The model normally sends only a `command_id`. If that workspace sets `allowUnlistedArgv` to `true`, `command_run` may also take an `argv` array. A single shell string is still rejected. The process always starts in the workspace root.
+Commands are configured per workspace. The process starts inside the workspace root and uses `shell: false`.
 
 ```json
 {
@@ -235,36 +153,85 @@ Commands are configured per workspace. The model normally sends only a `command_
 }
 ```
 
-See [commands.example.json](commands.example.json). Commands run with `shell: false`, a restricted environment, a timeout, output limits, and process-group termination on timeout. The file is validated at registration, loaded when a session opens, and reloaded immediately before every `command_run`.
+See [commands.example.json](commands.example.json). Setting `allowUnlistedArgv` to `true` lets the client provide an argv array, but a shell command string is always rejected.
 
-## Safety
+## Other connection modes
 
-This is a workspace guard, not an operating-system sandbox.
+| Transport | Command | Typical client |
+| --- | --- | --- |
+| ChatGPT quick setup | `mcp-local-editor setup-chatgpt <root>` | Ordinary ChatGPT Web conversations |
+| stdio MCP | `mcp-local-editor serve` | Local MCP hosts |
+| Streamable HTTP MCP | `mcp-local-editor-mcp` | Stable remote ChatGPT app deployment |
+| Authenticated Actions | `mcp-local-editor-actions` | Existing Custom GPT Actions |
+
+### Local stdio MCP
+
+```bash
+mcp-local-editor serve --profile full
+```
+
+Example client configuration after installing the package globally:
+
+```json
+{
+  "mcpServers": {
+    "local-editor": {
+      "command": "mcp-local-editor",
+      "args": ["serve", "--profile", "full"]
+    }
+  }
+}
+```
+
+### Stable HTTPS MCP
+
+For a named tunnel or your own HTTPS reverse proxy, use `mcp-local-editor-mcp` directly. It implements OAuth authorization code with PKCE S256, dynamic client registration, rotating refresh tokens, hashed persisted tokens, owner-token approval, and Host/Origin checks. Follow [docs/chatgpt-mcp.md](docs/chatgpt-mcp.md).
+
+### Custom GPT Actions fallback
+
+The Actions adapter exposes the same service through a generated OpenAPI document and bearer authentication. Follow [docs/chatgpt-actions.md](docs/chatgpt-actions.md).
+
+### macOS menu bar
+
+The repository also includes a Korean menu-bar helper for the OpenAI Secure MCP Tunnel and the local dashboard. This path is intended for source-checkout users:
+
+```bash
+git clone https://github.com/junjunjunbong/mcp-local-editor.git
+cd mcp-local-editor
+chmod +x macos/keep-tunnel.sh macos/install-gui.sh
+./macos/install-gui.sh
+```
+
+## Safety boundaries
+
+MCP Local Editor is a workspace guard, not an operating-system sandbox.
 
 It enforces:
 
-- only registered workspace ids can be opened
-- model-supplied absolute paths are rejected
-- lexical and symlink escapes are rejected
-- edits need a current SHA-256 and an unambiguous exact-text match
-- file writes use a temporary file and an atomic rename
-- read sessions cannot edit or run commands
-- the read profile omits write tools and forces read access on the server
-- only operator-configured argv arrays can run, unless a workspace opts into unlisted argv
-- Git operations are read-only
-- concurrent workspace sessions stay isolated
-- direct remote MCP requires OAuth by default
-- OAuth tokens are stored only as hashes, with atomic writes, a file lock, and rate limits on owner-token and client-registration attempts
-- Actions use a separate bearer token
+- registered workspace ids only
+- rejection of absolute, lexical escape, and symlink escape paths
+- short-lived, workspace-bound read or write sessions
+- current SHA-256 plus unambiguous exact-text matching for edits
+- temporary-file writes followed by atomic rename
+- read-only Git inspection; no commit or push tool
+- command argv policies, timeouts, output limits, and process termination
+- OAuth by default for remote MCP
+- hashed persisted OAuth tokens and private local state files
 
-It does not provide Docker or VM isolation, a network sandbox, an arbitrary shell, file create/delete/move, Git commit/push, automated tunnel management, or an autonomous agent loop.
-
-Keep the owner token private. Do not commit the registry, OAuth state, command policy, or token files.
+It does **not** provide Docker/VM isolation, network isolation, an arbitrary shell string, file create/delete/move tools, Git commit/push, or a fully autonomous background loop. Register only folders and commands you trust. Review ChatGPT's write confirmations and the resulting Git diff.
 
 ## Development
 
 ```bash
+git clone https://github.com/junjunjunbong/mcp-local-editor.git
+cd mcp-local-editor
+npm install
 npm run check
+npm link
 ```
 
-CI runs that suite on Node.js 20 and 22. Tests cover registry persistence and locking, workspace replacement and removal, path confinement, stale edits, read/write access, session expiry and revocation, concurrent isolation, stdio MCP, remote MCP, OAuth PKCE, refresh rotation, revocation, persisted bearer validation, OpenAPI generation, Actions dispatch, and the local dashboard.
+The package has no runtime dependencies. CI tests Node.js 20 and 22. The suite covers path confinement, registry locking, session isolation, read/write enforcement, stale edits, command execution, stdio MCP, Streamable HTTP MCP, OAuth PKCE, token rotation and revocation, Actions, the dashboard, tunnel recovery, and the one-command ChatGPT setup.
+
+## License
+
+[MIT](LICENSE) © 2026 [junjunjunbong](https://github.com/junjunjunbong)

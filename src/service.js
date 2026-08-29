@@ -91,12 +91,23 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: "command_run",
-    title: "Run allowlisted command",
-    description: "Run one operator-configured command id inside the session workspace. No shell string is accepted.",
+    title: "Run workspace command",
+    description: "Run a command inside the session workspace. Prefer a registered command_id. If workspace_open returned allow_unlisted_argv=true, you may instead pass argv as a string array (for example [\".venv/bin/python\", \"src/script.py\"]). cwd is the workspace root. A single shell string is not accepted. This is not an OS sandbox.",
     inputSchema: {
       type: "object",
-      properties: { session_id: SESSION_ID, command_id: { type: "string", minLength: 1 } },
-      required: ["session_id", "command_id"],
+      properties: {
+        session_id: SESSION_ID,
+        command_id: { type: "string", minLength: 1 },
+        argv: {
+          type: "array",
+          minItems: 1,
+          maxItems: 64,
+          items: { type: "string", minLength: 1 },
+          description: "Executable plus arguments. Only allowed when the workspace has allowUnlistedArgv."
+        },
+        timeout_sec: { type: "integer", minimum: 1, maximum: 900, default: 300 }
+      },
+      required: ["session_id"],
       additionalProperties: false
     },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
@@ -212,7 +223,7 @@ export class LocalEditorService {
             throw new ToolError("PERMISSION_DENIED", "the read profile cannot open a write session");
           }
           const opened = await this.sessions.open({ ...args, access: "read" });
-          const { commands: _commands, ...safe } = opened;
+          const { commands: _commands, allow_unlisted_argv: _allowUnlisted, ...safe } = opened;
           return safe;
         }
         return await this.sessions.open(args);

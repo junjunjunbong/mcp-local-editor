@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DashboardServer, DASHBOARD_DEFAULTS } from "./dashboard.js";
+import { TunnelWatchdog } from "./tunnel-watchdog.js";
 import { asToolError } from "./errors.js";
 import { McpStdioServer } from "./mcp-stdio.js";
 import { defaultRegistryPath, WorkspaceRegistry } from "./registry.js";
 import { LocalEditorService, normalizeToolProfile } from "./service.js";
 import { SessionManager } from "./sessions.js";
+import { runChatGptSetup } from "./setup-chatgpt.js";
 
 const VERSION = "0.2.0";
 const DEFAULT_TTL = 1800;
@@ -16,6 +19,7 @@ function usage() {
   return `mcp-local-editor ${VERSION}
 
 Usage:
+  mcp-local-editor setup-chatgpt <root> [--display-name <name>] [--commands <file>] [--profile full|read]
   mcp-local-editor serve [--registry workspaces.json] [--session-ttl-sec 1800] [--profile full|read]
   mcp-local-editor workspace add <id> <root> [--display-name <name>] [--commands <file> | --no-commands] [--replace]
   mcp-local-editor workspace add-folder <root> [--display-name <name>] [--commands <file> | --no-commands]
@@ -24,11 +28,12 @@ Usage:
   mcp-local-editor dashboard [--host 127.0.0.1] [--port 8791]
 
 Options:
-  --registry <path>          Registry path. Default: package-local workspaces.local.json
+  --registry <path>          Registry path. Default: user config directory.
   --session-ttl-sec <value>  Session lifetime, 60-3600 seconds.
   --profile <full|read>      MCP tool profile. Default: full
-  --host <host>              Dashboard bind host. Default: 127.0.0.1
-  --port <port>              Dashboard bind port. Default: 8791
+  --host <host>              Local bind host. Default: 127.0.0.1
+  --port <port>              Local bind port. Setup: 8790; dashboard: 8791
+  --cloudflared <command>    cloudflared executable for setup-chatgpt.
   --help                     Show help.
   --version                  Show version.
 `;
@@ -152,10 +157,73 @@ function parseDashboard(argv, env) {
   return parsed;
 }
 
+function parseTunnelTimeout(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 5 || parsed > 120) {
+    throw new Error("tunnel timeout must be 5-120 seconds");
+  }
+  return parsed * 1000;
+}
+
+function parseSetupChatGpt(argv, env) {
+  if (!argv[0] || argv[0].startsWith("--")) {
+    if (["--help", "-h"].includes(argv[0])) return { command: "setup-chatgpt", help: true };
+    throw new Error("setup-chatgpt requires <root>");
+  }
+  const base = defaults(env);
+  const parsed = {
+    command: "setup-chatgpt",
+    root: argv[0],
+    registry: base.registry,
+    sessionTtlSec: base.sessionTtlSec,
+    profile: base.profile,
+    displayName: undefined,
+    commands: undefined,
+    host: env.MCP_LOCAL_EDITOR_MCP_HOST || "127.0.0.1",
+    port: env.MCP_LOCAL_EDITOR_MCP_PORT ? parsePort(env.MCP_LOCAL_EDITOR_MCP_PORT) : 8790,
+    ownerTokenFile: env.MCP_LOCAL_EDITOR_OWNER_TOKEN_FILE,
+    oauthStore: env.MCP_LOCAL_EDITOR_OAUTH_STORE,
+    tunnelCommand: env.MCP_LOCAL_EDITOR_CLOUDFLARED || "cloudflared",
+    tunnelTimeoutMs: env.MCP_LOCAL_EDITOR_TUNNEL_TIMEOUT_SEC
+      ? parseTunnelTimeout(env.MCP_LOCAL_EDITOR_TUNNEL_TIMEOUT_SEC)
+      : 45_000
+  };
+  let noCommands = false;
+  for (let i = 1; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (["--help", "-h"].includes(arg)) return { ...parsed, help: true };
+    if (arg === "--registry") { parsed.registry = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--display-name") { parsed.displayName = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--commands") {
+      if (noCommands) throw new Error("--commands conflicts with --no-commands");
+      parsed.commands = valueAfter(argv, i, arg);
+      i += 1;
+      continue;
+    }
+    if (arg === "--no-commands") {
+      if (typeof parsed.commands === "string") throw new Error("--no-commands conflicts with --commands");
+      parsed.commands = null;
+      noCommands = true;
+      continue;
+    }
+    if (arg === "--profile") { parsed.profile = parseProfile(valueAfter(argv, i, arg)); i += 1; continue; }
+    if (arg === "--host") { parsed.host = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--port") { parsed.port = parsePort(valueAfter(argv, i, arg)); i += 1; continue; }
+    if (arg === "--session-ttl-sec") { parsed.sessionTtlSec = parseTtl(valueAfter(argv, i, arg)); i += 1; continue; }
+    if (arg === "--owner-token-file") { parsed.ownerTokenFile = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--oauth-store") { parsed.oauthStore = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--cloudflared") { parsed.tunnelCommand = valueAfter(argv, i, arg); i += 1; continue; }
+    if (arg === "--tunnel-timeout-sec") { parsed.tunnelTimeoutMs = parseTunnelTimeout(valueAfter(argv, i, arg)); i += 1; continue; }
+    throw new Error(`Unknown setup-chatgpt argument: ${arg}`);
+  }
+  return parsed;
+}
+
 export function parseArgs(argv, env = process.env) {
   if (!argv.length) return parseServe([], env);
   if (["--help", "-h"].includes(argv[0])) return { help: true };
   if (["--version", "-v"].includes(argv[0])) return { version: true };
+  if (argv[0] === "setup-chatgpt") return parseSetupChatGpt(argv.slice(1), env);
   if (argv[0] === "serve") return parseServe(argv.slice(1), env);
   if (argv[0] === "workspace") return parseWorkspace(argv.slice(1), env);
   if (argv[0] === "dashboard") return parseDashboard(argv.slice(1), env);
@@ -208,6 +276,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (args.help) { process.stdout.write(usage()); return; }
   if (args.version) { process.stdout.write(`${VERSION}\n`); return; }
   if (args.command === "serve") return await runServe(args);
+  if (args.command === "setup-chatgpt") return await runChatGptSetup(args);
   if (args.command === "workspace") return await runWorkspace(args);
   if (args.command === "dashboard") return await runDashboard(args);
   throw new Error("No command selected");
@@ -215,14 +284,18 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
 async function runDashboard(args) {
   const registry = new WorkspaceRegistry(args.registry);
-  const server = new DashboardServer(registry, { host: args.host, port: args.port });
+  const watchdog = new TunnelWatchdog();
+  const server = new DashboardServer(registry, { host: args.host, port: args.port, watchdog });
   const url = await server.start();
   process.stderr.write(`[mcp-local-editor] dashboard=${url}\n`);
   process.stderr.write(`[mcp-local-editor] registry=${registry.filePath}\n`);
   await new Promise(() => {});
 }
 
-const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isEntry = (() => {
+  try { return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); }
+  catch { return false; }
+})();
 if (isEntry) {
   process.stdout.on("error", (error) => { if (error.code === "EPIPE") process.exit(0); throw error; });
   main().catch((error) => {

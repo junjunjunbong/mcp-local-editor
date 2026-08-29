@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { asToolError } from "./errors.js";
@@ -186,7 +186,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   await server.waitUntilClosed();
 }
 
-const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isEntry = (() => {
+  try { return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); }
+  catch { return false; }
+})();
 if (isEntry) {
   main().catch((error) => {
     const normalized = asToolError(error);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { asToolError } from "./errors.js";
@@ -19,7 +19,7 @@ Usage:
   mcp-local-editor-actions [--host 127.0.0.1] [--port 8787] [--public-url https://editor.example.com] [--token-file token.txt]
 
 Options:
-  --registry <path>          Registry path. Default: package-local workspaces.local.json
+  --registry <path>          Registry path. Default: user config directory.
   --session-ttl-sec <value>  Session lifetime, 60-3600 seconds.
   --host <host>              Listener host. Default: 127.0.0.1
   --port <port>              Listener port. Default: 8787
@@ -137,7 +137,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   await server.waitUntilClosed();
 }
 
-const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isEntry = (() => {
+  try { return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); }
+  catch { return false; }
+})();
 if (isEntry) {
   main().catch((error) => {
     const normalized = asToolError(error);

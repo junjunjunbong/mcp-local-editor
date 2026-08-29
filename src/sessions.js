@@ -69,7 +69,8 @@ export class SessionManager {
       display_name: entry.displayName,
       access,
       expires_at: new Date(expiresAt).toISOString(),
-      commands: listCommands(config)
+      commands: listCommands(config),
+      allow_unlisted_argv: config.allowUnlistedArgv === true
     };
   }
 

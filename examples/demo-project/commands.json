@@ -1,0 +1,11 @@
+{
+  "allowUnlistedArgv": false,
+  "commands": {
+    "verify": {
+      "description": "Verify the requested button-label change",
+      "argv": ["node", "verify.mjs"],
+      "timeoutSec": 30,
+      "maxOutputBytes": 16384
+    }
+  }
+}

@@ -94,6 +94,31 @@ test("dashboard lists, adds, and removes workspaces on one status page", async (
   assert.equal((await request(port, "/api/state")).body.workspaces.length, 0);
 });
 
+test("dashboard exposes watchdog recovery on the status page", async (t) => {
+  const port = await freePort();
+  const registry = new WorkspaceRegistry(path.join(await tempDir(t), "registry.json"));
+  const watchdog = {
+    started: 0,
+    stopped: 0,
+    start() { this.started += 1; },
+    stop() { this.stopped += 1; },
+    status() { return { enabled: true, last_recovery: { at: "2026-08-29T13:35:56.000+09:00", reason: "deadline_without_later_forward" } }; }
+  };
+  const server = new DashboardServer(registry, {
+    port,
+    fetchImpl: async () => ({ ok: true, text: async () => "ready" }),
+    watchdog
+  });
+  await server.start();
+  t.after(() => server.stop());
+
+  assert.equal(watchdog.started, 1);
+  const state = await request(port, "/api/state");
+  assert.equal(state.body.watchdog.last_recovery.reason, "deadline_without_later_forward");
+  const page = await request(port, "/");
+  assert.match(page.body, /세션 복구됨/);
+});
+
 test("dashboard pick cancel stays a client error", async () => {
   const server = new DashboardServer(new WorkspaceRegistry("/tmp/unused.json"), {
     pickFolder: async () => {

@@ -8,6 +8,8 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_READ_LINES = 2_000;
 const MAX_REPLACEMENTS = 50;
 const MAX_RESULTS = 200;
+const MAX_ARGV_ITEMS = 64;
+const MAX_COMMAND_TIMEOUT_SEC = 900;
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 
 function sha256(text) {
@@ -77,8 +79,8 @@ function validateCommand(id, raw) {
     throw new ToolError("INVALID_CONFIG", `commands.${id}.argv must be a non-empty string array`);
   }
   const timeoutSec = raw.timeoutSec ?? 300;
-  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0 || timeoutSec > 900) {
-    throw new ToolError("INVALID_CONFIG", `commands.${id}.timeoutSec must be between 0 and 900`);
+  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0 || timeoutSec > MAX_COMMAND_TIMEOUT_SEC) {
+    throw new ToolError("INVALID_CONFIG", `commands.${id}.timeoutSec must be between 0 and ${MAX_COMMAND_TIMEOUT_SEC}`);
   }
   const maxOutputBytes = raw.maxOutputBytes ?? DEFAULT_OUTPUT_BYTES;
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 10 * 1024 * 1024) {
@@ -98,7 +100,10 @@ export function normalizeConfig(raw = {}) {
   const commandsObject = raw.commands === undefined ? {} : requireObject(raw.commands, "commands");
   const commands = new Map();
   for (const [id, command] of Object.entries(commandsObject)) commands.set(id, validateCommand(id, command));
-  return { commands };
+  if (raw.allowUnlistedArgv !== undefined && typeof raw.allowUnlistedArgv !== "boolean") {
+    throw new ToolError("INVALID_CONFIG", "allowUnlistedArgv must be a boolean");
+  }
+  return { commands, allowUnlistedArgv: raw.allowUnlistedArgv === true };
 }
 
 export async function loadConfig(configPath, root) {
@@ -248,14 +253,60 @@ export async function repoSearch(workspace, input) {
   return { query: input.query, glob: input.glob ?? null, matches, match_count: matches.length, truncated: matches.length >= maxResults || result.outputTruncated };
 }
 
+function validateArgv(argv, name) {
+  if (!Array.isArray(argv) || argv.length === 0 || argv.length > MAX_ARGV_ITEMS || argv.some((value) => typeof value !== "string" || !value)) {
+    throw new ToolError("INVALID_ARGUMENT", `${name} must be a non-empty string array of at most ${MAX_ARGV_ITEMS} items`);
+  }
+  return [...argv];
+}
+
+function resolveTimeoutSec(value) {
+  const timeoutSec = value ?? 300;
+  if (!Number.isInteger(timeoutSec) || timeoutSec <= 0 || timeoutSec > MAX_COMMAND_TIMEOUT_SEC) {
+    throw new ToolError("INVALID_ARGUMENT", `timeout_sec must be an integer between 1 and ${MAX_COMMAND_TIMEOUT_SEC}`);
+  }
+  return timeoutSec;
+}
+
+function resolveCommand(config, input) {
+  const hasCommandId = input.command_id !== undefined;
+  const hasArgv = input.argv !== undefined;
+  if (hasCommandId && hasArgv) throw new ToolError("INVALID_ARGUMENT", "pass command_id or argv, not both");
+  if (hasCommandId) {
+    if (typeof input.command_id !== "string" || !input.command_id) throw new ToolError("INVALID_ARGUMENT", "command_id is required");
+    const command = config.commands.get(input.command_id);
+    if (!command) {
+      throw new ToolError("COMMAND_NOT_ALLOWED", `unknown command_id: ${input.command_id}`, {
+        allowed_commands: listCommands(config).map((value) => value.command_id),
+        allow_unlisted_argv: config.allowUnlistedArgv === true
+      });
+    }
+    return command;
+  }
+  if (hasArgv) {
+    if (!config.allowUnlistedArgv) {
+      throw new ToolError("COMMAND_NOT_ALLOWED", "unlisted argv is disabled for this workspace", {
+        allowed_commands: listCommands(config).map((value) => value.command_id),
+        allow_unlisted_argv: false
+      });
+    }
+    return {
+      id: null,
+      argv: validateArgv(input.argv, "argv"),
+      timeoutMs: resolveTimeoutSec(input.timeout_sec) * 1000,
+      maxOutputBytes: DEFAULT_OUTPUT_BYTES
+    };
+  }
+  throw new ToolError("INVALID_ARGUMENT", config.allowUnlistedArgv ? "command_id or argv is required" : "command_id is required");
+}
+
 export async function commandRun(workspace, config, input) {
-  if (typeof input.command_id !== "string" || !input.command_id) throw new ToolError("INVALID_ARGUMENT", "command_id is required");
-  const command = config.commands.get(input.command_id);
-  if (!command) throw new ToolError("COMMAND_NOT_ALLOWED", `unknown command_id: ${input.command_id}`, { allowed_commands: listCommands(config).map((v) => v.command_id) });
+  const command = resolveCommand(config, input);
   const [file, ...args] = command.argv;
   const result = await runProcess({ file, args, cwd: workspace.root, timeoutMs: command.timeoutMs, maxOutputBytes: command.maxOutputBytes });
   return {
     command_id: command.id,
+    argv: command.argv,
     exit_code: result.exitCode,
     signal: result.signal,
     stdout: result.stdout,

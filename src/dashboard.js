@@ -49,6 +49,7 @@ export class DashboardServer {
     this.tunnelUi = options.tunnelUi ?? DASHBOARD_DEFAULTS.tunnelUi;
     this.pickFolder = options.pickFolder ?? pickFolderWithOsascript;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.watchdog = options.watchdog ?? null;
     this.server = null;
   }
 
@@ -69,7 +70,8 @@ export class DashboardServer {
       tunnel,
       tunnel_ui: this.tunnelUi,
       registry: this.registry.filePath,
-      workspaces: workspaces.map(publicEntry)
+      workspaces: workspaces.map(publicEntry),
+      ...(this.watchdog ? { watchdog: this.watchdog.status() } : {})
     };
   }
 
@@ -87,10 +89,12 @@ export class DashboardServer {
       this.server.once("error", reject);
       this.server.listen(this.port, this.host, resolve);
     });
+    this.watchdog?.start?.();
     return `http://${this.host}:${this.port}/`;
   }
 
   async stop() {
+    this.watchdog?.stop?.();
     if (!this.server) return;
     const server = this.server;
     this.server = null;
@@ -188,9 +192,11 @@ function renderPage() {
     }
     function render(state) {
       const tunnel = document.getElementById("tunnel");
+      const recovery = state.watchdog && state.watchdog.last_recovery;
       tunnel.innerHTML = '<span class="dot ' + (state.tunnel.ready ? "on" : "") + '"></span>' +
         (state.tunnel.ready ? "터널 연결됨" : "터널 꺼짐") +
-        (state.tunnel.detail && !state.tunnel.ready ? " · " + state.tunnel.detail : "");
+        (state.tunnel.detail && !state.tunnel.ready ? " · " + state.tunnel.detail : "") +
+        (recovery ? " · 세션 복구됨" : "");
       document.getElementById("tunnel-ui").href = state.tunnel_ui;
       const rows = document.getElementById("rows");
       if (!state.workspaces.length) {

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, Workspace } from "./core.js";
@@ -14,11 +15,19 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function defaultRegistryPath({ env = process.env, packageRoot = PACKAGE_ROOT } = {}) {
+export function defaultRegistryPath({
+  env = process.env,
+  packageRoot = PACKAGE_ROOT,
+  fileExists = existsSync,
+  homeDirectory = homedir()
+} = {}) {
   if (env.MCP_LOCAL_EDITOR_REGISTRY) return path.resolve(env.MCP_LOCAL_EDITOR_REGISTRY);
   if (env.MCP_LOCAL_EDITOR_HOME) return path.join(path.resolve(env.MCP_LOCAL_EDITOR_HOME), "workspaces.json");
   if (env.XDG_CONFIG_HOME) return path.join(path.resolve(env.XDG_CONFIG_HOME), "mcp-local-editor", "workspaces.json");
-  return path.join(path.resolve(packageRoot), "workspaces.local.json");
+  const legacyPath = path.join(path.resolve(packageRoot), "workspaces.local.json");
+  if (fileExists(legacyPath)) return legacyPath;
+  const configRoot = env.APPDATA || path.join(path.resolve(env.HOME || homeDirectory), ".config");
+  return path.join(configRoot, "mcp-local-editor", "workspaces.json");
 }
 
 export function validateWorkspaceId(id) {
@@ -170,14 +179,21 @@ export class WorkspaceRegistry {
       try {
         const workspace = await Workspace.open(entry.root);
         if (workspace.root !== entry.root) throw new ToolError("WORKSPACE_ROOT_CHANGED", "workspace root canonical path changed");
-        if (entry.commandsConfig) await loadConfig(entry.commandsConfig, workspace.root);
-        return { workspace_id: entry.id, display_name: entry.displayName, available: true, commands_configured: Boolean(entry.commandsConfig) };
+        const config = await loadConfig(entry.commandsConfig, workspace.root);
+        return {
+          workspace_id: entry.id,
+          display_name: entry.displayName,
+          available: true,
+          commands_configured: Boolean(entry.commandsConfig),
+          allow_unlisted_argv: config.allowUnlistedArgv === true
+        };
       } catch (error) {
         return {
           workspace_id: entry.id,
           display_name: entry.displayName,
           available: false,
           commands_configured: Boolean(entry.commandsConfig),
+          allow_unlisted_argv: false,
           unavailable_reason: error instanceof ToolError ? error.code : "WORKSPACE_UNAVAILABLE"
         };
       }

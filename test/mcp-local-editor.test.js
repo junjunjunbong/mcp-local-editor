@@ -77,6 +77,42 @@ test("parseArgs supports workspace add, list, and remove", () => {
   assert.equal(parseArgs(["workspace", "remove", "repo"], {}).id, "repo");
 });
 
+test("parseArgs supports one-command ChatGPT setup", () => {
+  const parsed = parseArgs([
+    "setup-chatgpt",
+    "/tmp/repo",
+    "--profile",
+    "read",
+    "--port",
+    "8890",
+    "--tunnel-timeout-sec",
+    "12"
+  ], { XDG_CONFIG_HOME: "/Users/example/config" });
+  assert.equal(parsed.command, "setup-chatgpt");
+  assert.equal(parsed.root, "/tmp/repo");
+  assert.equal(parsed.profile, "read");
+  assert.equal(parsed.port, 8890);
+  assert.equal(parsed.tunnelTimeoutMs, 12_000);
+  assert.equal(parsed.registry, "/Users/example/config/mcp-local-editor/workspaces.json");
+});
+
+test("published CLI entrypoints run through npm-style symlinks", {
+  skip: process.platform === "win32"
+}, async (t) => {
+  const directory = await tempDir(t, "cli-symlinks-");
+  const entrypoints = [
+    ["mcp-local-editor", path.resolve("src/cli.js")],
+    ["mcp-local-editor-mcp", path.resolve("src/mcp-http-cli.js")],
+    ["mcp-local-editor-actions", path.resolve("src/actions-cli.js")]
+  ];
+  for (const [name, target] of entrypoints) {
+    const link = path.join(directory, name);
+    await fs.symlink(target, link);
+    const result = await execFileAsync(link, ["--version"], { encoding: "utf8" });
+    assert.equal(result.stdout.trim(), "0.2.0");
+  }
+});
+
 test("suggestWorkspaceId keeps safe folder names and hashes the rest", () => {
   assert.equal(suggestWorkspaceId("/Users/me/02_LDI"), "02_LDI");
   assert.match(suggestWorkspaceId("/Users/me/연구"), /^ws-[0-9a-f]{8}$/);
@@ -91,8 +127,22 @@ test("defaultRegistryPath honors XDG_CONFIG_HOME", () => {
   assert.equal(defaultRegistryPath({ env: { XDG_CONFIG_HOME: "/tmp/x" } }), "/tmp/x/mcp-local-editor/workspaces.json");
 });
 
-test("defaultRegistryPath stores the registry next to the package", () => {
-  assert.equal(defaultRegistryPath({ env: {}, packageRoot: "/Users/example/mcp-local-editor" }), "/Users/example/mcp-local-editor/workspaces.local.json");
+test("defaultRegistryPath keeps an existing package-local registry for compatibility", () => {
+  assert.equal(defaultRegistryPath({
+    env: {},
+    packageRoot: "/Users/example/mcp-local-editor",
+    fileExists: () => true,
+    homeDirectory: "/Users/example"
+  }), "/Users/example/mcp-local-editor/workspaces.local.json");
+});
+
+test("defaultRegistryPath uses the user config directory for new installs", () => {
+  assert.equal(defaultRegistryPath({
+    env: {},
+    packageRoot: "/Users/example/mcp-local-editor",
+    fileExists: () => false,
+    homeDirectory: "/Users/example"
+  }), "/Users/example/.config/mcp-local-editor/workspaces.json");
 });
 
 test("Workspace rejects lexical path escapes", async (t) => {
@@ -143,6 +193,22 @@ test("command_run executes only configured argv", async (t) => {
   const result = await commandRun(await Workspace.open(root), config, { command_id: "verify" });
   assert.equal(result.stdout, "ok");
   await assert.rejects(commandRun(await Workspace.open(root), config, { command_id: "unknown" }), (error) => error.code === "COMMAND_NOT_ALLOWED");
+  await assert.rejects(commandRun(await Workspace.open(root), config, { argv: [process.execPath, "-e", "process.stdout.write('no')"] }), (error) => error.code === "COMMAND_NOT_ALLOWED");
+});
+
+test("command_run accepts argv only when the workspace enables unlisted argv", async (t) => {
+  const root = await makeRepo(t, "unlisted");
+  const workspace = await Workspace.open(root);
+  const config = normalizeConfig({ allowUnlistedArgv: true });
+  const result = await commandRun(workspace, config, {
+    argv: [process.execPath, "-e", "process.stdout.write(process.cwd())"]
+  });
+  assert.equal(result.command_id, null);
+  assert.equal(result.stdout, workspace.root);
+  await assert.rejects(
+    commandRun(await Workspace.open(root), config, { command_id: "verify", argv: [process.execPath] }),
+    (error) => error.code === "INVALID_ARGUMENT"
+  );
 });
 
 test("command_run reloads the current workspace command config", async (t) => {
@@ -239,6 +305,7 @@ test("workspace_open creates a short-lived workspace-bound session with per-work
   const opened = await service.call("workspace_open", { workspace_id: "repo", access: "write" });
   assert.match(opened.session_id, /^ses_/);
   assert.equal(opened.commands[0].command_id, "verify");
+  assert.equal(opened.allow_unlisted_argv, false);
   assert.equal("root" in opened, false);
 });
 

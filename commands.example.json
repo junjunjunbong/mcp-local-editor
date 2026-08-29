@@ -1,4 +1,5 @@
 {
+  "allowUnlistedArgv": false,
   "commands": {
     "test": {
       "description": "Run the repository test suite",
