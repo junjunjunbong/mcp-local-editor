@@ -4,6 +4,10 @@
   <a href="https://github.com/junjunjunbong/mcp-local-editor#readme">English</a> · <strong>한국어</strong>
 </p>
 
+<p align="center">
+  <img src="docs/assets/mcp-local-editor-hero.png" alt="MCP Local Editor가 ChatGPT 웹을 보호된 로컬 개발 워크스페이스에 안전하게 연결하는 모습" width="1200">
+</p>
+
 **ChatGPT 웹을 로컬 코딩 에이전트처럼 사용하세요.** 판단은 ChatGPT가 하고, MCP Local Editor는 컴퓨터의 파일을 안전한 범위 안에서 검색하고 읽고 수정하고 테스트하고 검토할 수 있게 연결합니다.
 
 [![npm](https://img.shields.io/npm/v/mcp-local-editor)](https://www.npmjs.com/package/mcp-local-editor)

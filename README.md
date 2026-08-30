@@ -4,6 +4,10 @@
   <strong>English</strong> · <a href="https://github.com/junjunjunbong/mcp-local-editor/blob/main/README.ko.md">한국어</a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/mcp-local-editor-hero.png" alt="MCP Local Editor securely connects ChatGPT Web to a guarded local developer workspace" width="1200">
+</p>
+
 **Use ChatGPT Web like a local coding agent.** ChatGPT does the reasoning; MCP Local Editor gives it guarded access to search, read, edit, test, and review files on your computer.
 
 [![npm](https://img.shields.io/npm/v/mcp-local-editor)](https://www.npmjs.com/package/mcp-local-editor)
