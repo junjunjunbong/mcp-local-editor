@@ -9,6 +9,11 @@ if ! curl -sf "http://127.0.0.1:8791/healthz" >/dev/null; then
     >> "${HOME}/Library/Logs/mcp-local-editor-dashboard.log" 2>&1 &
 fi
 
+if ! pgrep -f "${ROOT}/src/cli.js tunnel-watch" >/dev/null; then
+  nohup node "${ROOT}/src/cli.js" tunnel-watch \
+    >> "${HOME}/Library/Logs/mcp-local-editor-watchdog.log" 2>&1 &
+fi
+
 ENV_FILE="${HOME}/.config/tunnel-client/local-read.env"
 if [[ -f "${ENV_FILE}" ]]; then
   set -a

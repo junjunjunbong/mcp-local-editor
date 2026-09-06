@@ -10,7 +10,9 @@ AGENT_DIR="${HOME}/Library/LaunchAgents"
 LOG_DIR="${HOME}/Library/Logs"
 APP_DIR="${HOME}/Applications/Local Editor.app"
 LABEL="com.mcp-local-editor.tunnel"
+WATCH_LABEL="com.mcp-local-editor.watchdog"
 PLIST="${AGENT_DIR}/${LABEL}.plist"
+WATCH_PLIST="${AGENT_DIR}/${WATCH_LABEL}.plist"
 ENV_FILE="${TUNNEL_DIR}/local-read.env"
 
 if [[ -z "${NODE}" ]]; then
@@ -74,6 +76,33 @@ cat > "${PLIST}" <<EOF
 </plist>
 EOF
 
+cat > "${WATCH_PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${WATCH_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE}</string>
+    <string>${ROOT}/src/cli.js</string>
+    <string>tunnel-watch</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${ROOT}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/mcp-local-editor-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/mcp-local-editor-watchdog.log</string>
+</dict>
+</plist>
+EOF
+
 cat > "${APP_DIR}/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -106,6 +135,7 @@ chmod +x "${ROOT}/macos/keep-tunnel.sh"
 echo "Installed:"
 echo "  app     ${APP_DIR}"
 echo "  agent   ${PLIST}"
+echo "  watch   ${WATCH_PLIST}"
 echo "  config  ${CONFIG_DIR}/gui.json"
 echo "  env     ${ENV_FILE}"
 echo

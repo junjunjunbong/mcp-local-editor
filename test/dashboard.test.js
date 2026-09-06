@@ -60,6 +60,10 @@ test("parseArgs supports dashboard", () => {
   assert.equal(parsed.port, 8799);
 });
 
+test("parseArgs supports tunnel-watch", () => {
+  assert.equal(parseArgs(["tunnel-watch"], {}).command, "tunnel-watch");
+});
+
 test("dashboard lists, adds, and removes workspaces on one status page", async (t) => {
   const root = path.join(await tempDir(t), "notes");
   await fs.mkdir(root);

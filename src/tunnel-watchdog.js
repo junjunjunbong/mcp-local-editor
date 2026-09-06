@@ -163,7 +163,6 @@ export class TunnelWatchdog {
     this.timer = setInterval(() => {
       this.tick();
     }, this.intervalMs);
-    this.timer.unref?.();
     this.tick();
   }
 

@@ -26,6 +26,7 @@ Usage:
   mcp-local-editor workspace list [--json]
   mcp-local-editor workspace remove <id>
   mcp-local-editor dashboard [--host 127.0.0.1] [--port 8791]
+  mcp-local-editor tunnel-watch
 
 Options:
   --registry <path>          Registry path. Default: user config directory.
@@ -227,6 +228,11 @@ export function parseArgs(argv, env = process.env) {
   if (argv[0] === "serve") return parseServe(argv.slice(1), env);
   if (argv[0] === "workspace") return parseWorkspace(argv.slice(1), env);
   if (argv[0] === "dashboard") return parseDashboard(argv.slice(1), env);
+  if (argv[0] === "tunnel-watch") {
+    if (argv.slice(1).some((arg) => ["--help", "-h"].includes(arg))) return { command: "tunnel-watch", help: true };
+    if (argv.length > 1) throw new Error(`Unknown tunnel-watch argument: ${argv[1]}`);
+    return { command: "tunnel-watch" };
+  }
   if (argv[0].startsWith("--")) return parseServe(argv, env);
   throw new Error(`Unknown command: ${argv[0]}`);
 }
@@ -279,7 +285,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (args.command === "setup-chatgpt") return await runChatGptSetup(args);
   if (args.command === "workspace") return await runWorkspace(args);
   if (args.command === "dashboard") return await runDashboard(args);
+  if (args.command === "tunnel-watch") return await runTunnelWatch();
   throw new Error("No command selected");
+}
+
+async function runTunnelWatch() {
+  const watchdog = new TunnelWatchdog();
+  watchdog.start();
+  process.stderr.write("[mcp-local-editor] tunnel-watch=on\n");
+  await new Promise(() => {});
 }
 
 async function runDashboard(args) {
