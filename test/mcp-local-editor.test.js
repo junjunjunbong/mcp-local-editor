@@ -322,14 +322,24 @@ test("read sessions cannot edit files or execute commands", async (t) => {
   await assert.rejects(service.call("command_run", { session_id: opened.session_id, command_id: "verify" }), (error) => error.code === "PERMISSION_DENIED");
 });
 
-test("expired sessions must be reopened", async (t) => {
+test("expired sessions are renewed on the next tool call", async (t) => {
   let now = 1_000_000;
+  const root = await makeRepo(t, "expiry", "old\n");
   const registry = new WorkspaceRegistry(path.join(await tempDir(t), "registry.json"));
-  await register(registry, "repo", await makeRepo(t, "expiry"));
+  await register(registry, "repo", root);
   const { service } = makeService(registry, { defaultTtlSec: 60, maxTtlSec: 60, now: () => now });
-  const opened = await service.call("workspace_open", { workspace_id: "repo" });
+  const opened = await service.call("workspace_open", { workspace_id: "repo", access: "write" });
   now += 60_000;
-  await assert.rejects(service.call("file_read", { session_id: opened.session_id, path: "file.txt" }), (error) => error.code === "SESSION_EXPIRED");
+  await fs.writeFile(path.join(root, "file.txt"), "fresh\n");
+  const read = await service.call("file_read", { session_id: opened.session_id, path: "file.txt" });
+  assert.equal(read.content, "fresh\n");
+  await service.call("file_edit", {
+    session_id: opened.session_id,
+    path: "file.txt",
+    expected_sha256: read.sha256,
+    replacements: [{ old_text: "fresh", new_text: "edited" }]
+  });
+  assert.equal(await fs.readFile(path.join(root, "file.txt"), "utf8"), "edited\n");
 });
 
 test("registry removal or replacement revokes existing sessions", async (t) => {
@@ -367,6 +377,26 @@ test("all repository tools require a session_id", async (t) => {
   for (const [name, args] of [["repo_search", { query: "x" }], ["file_read", { path: "x" }], ["file_edit", {}], ["command_run", { command_id: "x" }], ["git_diff", {}]]) {
     await assert.rejects(service.call(name, args), (error) => error.code === "SESSION_REQUIRED");
   }
+});
+
+test("read tools accept a registered workspace id when workspace_open is unavailable", async (t) => {
+  let now = 1_000_000;
+  const registry = new WorkspaceRegistry(path.join(await tempDir(t), "registry.json"));
+  const root = await makeRepo(t, "alias", "from-id\n");
+  await register(registry, "ldi", root);
+  const { service } = makeService(registry, { defaultTtlSec: 60, maxTtlSec: 60, now: () => now });
+  const read = await service.call("file_read", { session_id: "ldi", path: "file.txt" });
+  assert.equal(read.content, "from-id\n");
+  const again = await service.call("repo_search", { session_id: "ldi", query: "from-id" });
+  assert.equal(again.matches[0].path, "file.txt");
+  await assert.rejects(
+    service.call("file_edit", { session_id: "ldi", path: "file.txt", expected_sha256: read.sha256, replacements: [{ old_text: "from-id", new_text: "nope" }] }),
+    (error) => error.code === "PERMISSION_DENIED"
+  );
+  now += 60_000;
+  await fs.writeFile(path.join(root, "file.txt"), "after-expiry\n");
+  const renewed = await service.call("file_read", { session_id: "ldi", path: "file.txt" });
+  assert.equal(renewed.content, "after-expiry\n");
 });
 
 test("MCP lists seven tools and supports list, open, and read without exposing roots", async (t) => {

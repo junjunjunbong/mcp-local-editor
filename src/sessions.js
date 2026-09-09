@@ -60,6 +60,7 @@ export class SessionManager {
       workspace,
       config,
       signature: entrySignature(entry),
+      ttlSec,
       createdAt,
       expiresAt
     });
@@ -74,36 +75,59 @@ export class SessionManager {
     };
   }
 
+  async openReadAlias(workspaceId) {
+    try {
+      const opened = await this.open({ workspace_id: workspaceId, access: "read" });
+      const session = this.sessions.get(opened.session_id);
+      if (session) this.sessions.set(workspaceId, session);
+      return session ?? null;
+    } catch (error) {
+      if (error instanceof ToolError && (error.code === "WORKSPACE_NOT_FOUND" || error.code === "INVALID_WORKSPACE_ID")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  drop(session, sessionId) {
+    this.sessions.delete(sessionId);
+    if (session?.sessionId) this.sessions.delete(session.sessionId);
+    if (session?.workspaceId) this.sessions.delete(session.workspaceId);
+  }
+
   async resolve(sessionId, { write = false, refreshConfig = false } = {}) {
     if (typeof sessionId !== "string" || !sessionId) throw new ToolError("SESSION_REQUIRED", "session_id is required");
-    const session = this.sessions.get(sessionId);
+    let session = this.sessions.get(sessionId);
+    if (!session && !write) session = await this.openReadAlias(sessionId);
     if (!session) throw new ToolError("SESSION_NOT_FOUND", "session was not found; call workspace_open again");
-    if (this.now() >= session.expiresAt) {
-      this.sessions.delete(sessionId);
-      throw new ToolError("SESSION_EXPIRED", "session expired; call workspace_open again");
-    }
 
     let entry;
     try {
       entry = await this.registry.get(session.workspaceId);
     } catch (error) {
-      this.sessions.delete(sessionId);
+      this.drop(session, sessionId);
       if (error instanceof ToolError && error.code === "WORKSPACE_NOT_FOUND") {
         throw new ToolError("SESSION_REVOKED", "workspace registration was removed; open a new session");
       }
       throw error;
     }
     if (entrySignature(entry) !== session.signature) {
-      this.sessions.delete(sessionId);
+      this.drop(session, sessionId);
       throw new ToolError("SESSION_REVOKED", "workspace registration changed; open a new session");
     }
     const currentWorkspace = await Workspace.open(entry.root);
     if (currentWorkspace.root !== session.workspace.root) {
-      this.sessions.delete(sessionId);
+      this.drop(session, sessionId);
       throw new ToolError("SESSION_REVOKED", "workspace canonical path changed; open a new session");
     }
+    if (this.now() >= session.expiresAt) {
+      session.expiresAt = this.now() + session.ttlSec * 1000;
+      session.workspace = currentWorkspace;
+      session.config = await loadConfig(entry.commandsConfig, session.workspace.root);
+    } else if (refreshConfig) {
+      session.config = await loadConfig(entry.commandsConfig, session.workspace.root);
+    }
     if (write && session.access !== "write") throw new ToolError("PERMISSION_DENIED", "this operation requires a write session");
-    if (refreshConfig) session.config = await loadConfig(entry.commandsConfig, session.workspace.root);
     return session;
   }
 

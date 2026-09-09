@@ -217,7 +217,7 @@ The server is probably running with `--profile read`, or the ChatGPT account/wor
 
 ### A workspace session expired
 
-Sessions default to 30 minutes and live only in memory. Ask ChatGPT to open the workspace again, or use `--session-ttl-sec 3600`.
+While the server process stays up and the workspace stays registered, the next tool call renews an expired session. If ChatGPT still cannot read files, the process probably restarted; ask it to pass the workspace id as `session_id`, or open the workspace again.
 
 ### The tunnel restarts and authentication stops working
 

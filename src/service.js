@@ -189,6 +189,8 @@ export class LocalEditorService {
   instructions() {
     const common = [
       "Call workspace_list and workspace_open before repository tools.",
+      "If workspace_open is not available, pass a registered workspace_id as session_id to read tools.",
+      "If a session expires, retry the same session_id or workspace_id; do not fall back to earlier file contents.",
       "Select only a registered workspace id; never invent or request an absolute path.",
       "Pass session_id to every repository tool.",
       "This is a workspace guard, not an operating-system sandbox."
